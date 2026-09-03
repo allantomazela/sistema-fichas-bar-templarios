@@ -245,6 +245,15 @@ export const INITIAL_CONFIG: Configuracoes = {
   cidade_pix: 'São Paulo',
   salt_seguranca: 'FICHA-SECURE-2025-SALT',
   tema: 'light',
+  ficha_mostrar_cabecalho: true,
+  ficha_mostrar_logo: true,
+  ficha_mostrar_qrcode: true,
+  ficha_mostrar_hash: true,
+  ficha_mostrar_preco: true,
+  ficha_mostrar_data_hora: true,
+  ficha_mostrar_operador: true,
+  ficha_mostrar_rodape: true,
+  ficha_mostrar_imagem_produto: true,
 }
 
 export const INITIAL_CAIXA: Caixa = {

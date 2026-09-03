@@ -18,6 +18,7 @@ import {
   DollarSign,
   Receipt,
   Search,
+  LayoutDashboard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -78,6 +79,9 @@ export default function Layout() {
       } else if (e.key === 'F4' && !isInput) {
         e.preventDefault()
         navigate('/produtos')
+      } else if (e.key === 'F5' && !isInput) {
+        e.preventDefault()
+        navigate('/dashboard')
       } else if (e.key === 'F6' && !isInput) {
         e.preventDefault()
         navigate('/relatorios')
@@ -96,6 +100,7 @@ export default function Layout() {
 
   const navItems = [
     { to: '/', label: 'PDV Rápido', icon: Store, shortcut: 'F1' },
+    { to: '/dashboard', label: 'Dashboard & Resumo', icon: LayoutDashboard, shortcut: 'F5' },
     { to: '/caixa', label: 'Controle de Caixa', icon: DollarSign, shortcut: 'F2' },
     { to: '/validar', label: 'Validador Fichas', icon: ShieldCheck, shortcut: 'F3' },
     { to: '/produtos', label: 'Produtos & Combos', icon: Layers, shortcut: 'F4' },
@@ -262,6 +267,12 @@ export default function Layout() {
                 F1
               </kbd>
               PDV
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="bg-slate-800 text-slate-200 px-1.5 py-0.2 rounded font-mono text-[10px] border border-slate-700">
+                F5
+              </kbd>
+              Dashboard
             </span>
             <span className="flex items-center gap-1">
               <kbd className="bg-slate-800 text-slate-200 px-1.5 py-0.2 rounded font-mono text-[10px] border border-slate-700">

@@ -5,6 +5,7 @@ import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { PosProvider } from '@/context/PosContext'
 import Index from './pages/Index'
+import Dashboard from './pages/Dashboard'
 import CashControl from './pages/CashControl'
 import ProductsManager from './pages/ProductsManager'
 import TicketValidator from './pages/TicketValidator'
@@ -22,9 +23,10 @@ const App = () => (
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<Index />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/caixa" element={<CashControl />} />
-            <Route path="/produtos" element={<ProductsManager />} />
             <Route path="/validar" element={<TicketValidator />} />
+            <Route path="/produtos" element={<ProductsManager />} />
             <Route path="/relatorios" element={<Reports />} />
             <Route path="/configuracoes" element={<Settings />} />
           </Route>
@@ -34,5 +36,4 @@ const App = () => (
     </PosProvider>
   </BrowserRouter>
 )
-
 export default App

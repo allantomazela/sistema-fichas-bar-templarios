@@ -18,45 +18,83 @@ export const ThermalFichaTicket: React.FC<SingleFichaProps> = ({
   const is58mm = config.largura_bobina === '58mm'
   const widthClass = is58mm ? 'w-[200px] text-[11px]' : 'w-[280px] text-[12px]'
 
+  const showCabecalho = config.ficha_mostrar_cabecalho !== false
+  const showLogo = config.ficha_mostrar_logo !== false && !!config.logomarca_base64
+  const showQrCode = config.ficha_mostrar_qrcode !== false
+  const showHash = config.ficha_mostrar_hash !== false
+  const showPreco = config.ficha_mostrar_preco !== false
+  const showDataHora = config.ficha_mostrar_data_hora !== false
+  const showOperador = config.ficha_mostrar_operador !== false
+  const showRodape = config.ficha_mostrar_rodape !== false
+  const showProductImage =
+    config.ficha_mostrar_imagem_produto !== false &&
+    ficha.imprimir_imagem_ficha !== false &&
+    !!ficha.produto_imagem_base64
+
   return (
     <div
       className={`thermal-ticket font-mono bg-white text-black p-3 my-2 border border-dashed border-gray-400 rounded-none shadow-sm select-none ${widthClass} mx-auto transition-all`}
       style={{ fontFamily: '"Courier New", Courier, monospace' }}
     >
+      {/* LOGO DO EVENTO (SE CONFIGURADA E HABILITADA) */}
+      {showLogo && (
+        <div className="flex justify-center mb-2 pb-1 border-b border-gray-300">
+          <img
+            src={config.logomarca_base64}
+            alt="Logo do Evento"
+            className="max-h-12 max-w-[80%] object-contain filter grayscale contrast-125"
+          />
+        </div>
+      )}
+
       {/* CABEÇALHO DO EVENTO */}
-      <div className="text-center border-b border-black pb-2 mb-2">
-        <div className="text-[10px] uppercase font-bold tracking-wider text-gray-700">
-          *** FICHA DE CONSUMO ***
-        </div>
-        <div className="font-extrabold text-[15px] leading-tight uppercase mt-0.5">
-          {config.nome_evento || 'EVENTO'}
-        </div>
-        {config.subtitulo_evento && (
-          <div className="text-[10px] text-gray-800 leading-tight mt-0.5">
-            {config.subtitulo_evento}
+      {showCabecalho && (
+        <div className="text-center border-b border-black pb-2 mb-2">
+          <div className="text-[10px] uppercase font-bold tracking-wider text-gray-700">
+            *** FICHA DE CONSUMO ***
           </div>
-        )}
-        {config.cabecalho_cupom && (
-          <div className="text-[9px] text-gray-600 mt-1 leading-none">{config.cabecalho_cupom}</div>
-        )}
-      </div>
+          <div className="font-extrabold text-[15px] leading-tight uppercase mt-0.5">
+            {config.nome_evento || 'EVENTO'}
+          </div>
+          {config.subtitulo_evento && (
+            <div className="text-[10px] text-gray-800 leading-tight mt-0.5">
+              {config.subtitulo_evento}
+            </div>
+          )}
+          {config.cabecalho_cupom && (
+            <div className="text-[9px] text-gray-600 mt-1 leading-none">
+              {config.cabecalho_cupom}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* DETALHES DO PRODUTO (DESTAQUE MÁXIMO) */}
       <div className="text-center py-2 border-b-2 border-black">
+        {showProductImage && (
+          <div className="flex justify-center mb-1">
+            <img
+              src={ficha.produto_imagem_base64}
+              alt={ficha.produto_nome}
+              className="w-14 h-14 object-cover rounded border border-black/40 filter grayscale contrast-125"
+            />
+          </div>
+        )}
         <div className="text-[10px] uppercase font-semibold text-gray-600">
           [{ficha.categoria_nome}]
         </div>
         <div className="font-black text-[18px] leading-tight uppercase my-1 text-black tracking-wide break-words">
           {ficha.produto_nome}
         </div>
-        {ficha.preco > 0 ? (
-          <div className="text-[14px] font-bold mt-1">{formatCurrency(ficha.preco)}</div>
-        ) : (
-          <div className="text-[11px] font-bold text-gray-700">ITEM DE COMBO</div>
-        )}
+        {showPreco &&
+          (ficha.preco > 0 ? (
+            <div className="text-[14px] font-bold mt-1">{formatCurrency(ficha.preco)}</div>
+          ) : (
+            <div className="text-[11px] font-bold text-gray-700">ITEM DE COMBO</div>
+          ))}
       </div>
 
-      {/* SEQUENCIAL E CÓDIGO DE VALIDAÇÃO */}
+      {/* SEQUENCIAL E NÚMERO DA VENDA */}
       <div className="py-2 text-center border-b border-dashed border-black">
         <div className="flex items-center justify-between text-[11px] px-1 font-bold">
           <span>FICHA:</span>
@@ -70,29 +108,43 @@ export const ThermalFichaTicket: React.FC<SingleFichaProps> = ({
         </div>
       </div>
 
-      {/* QR CODE ANTI-FRAUDE E HASH */}
-      <div className="py-2 flex flex-col items-center justify-center">
-        <div className="p-1 bg-white border border-black inline-block">
-          <QRCodeSVG value={ficha.hash_seguranca} size={is58mm ? 90 : 110} />
+      {/* QR CODE ANTI-FRAUDE E/OU CÓDIGO HASH */}
+      {(showQrCode || showHash) && (
+        <div className="py-2 flex flex-col items-center justify-center">
+          {showQrCode && (
+            <div className="p-1 bg-white border border-black inline-block">
+              <QRCodeSVG value={ficha.hash_seguranca} size={is58mm ? 90 : 110} />
+            </div>
+          )}
+          {showHash && (
+            <>
+              <div className="text-[12px] font-black tracking-widest mt-1 bg-black text-white px-2 py-0.5">
+                {ficha.codigo_validacao}
+              </div>
+              <div className="text-[8px] text-gray-600 uppercase mt-0.5 text-center flex items-center justify-center gap-1">
+                <ShieldCheck className="w-3 h-3 inline" /> CÓDIGO ANTI-FRAUDE ÚNICO
+              </div>
+            </>
+          )}
         </div>
-        <div className="text-[12px] font-black tracking-widest mt-1 bg-black text-white px-2 py-0.5">
-          {ficha.codigo_validacao}
-        </div>
-        <div className="text-[8px] text-gray-600 uppercase mt-0.5 text-center flex items-center justify-center gap-1">
-          <ShieldCheck className="w-3 h-3 inline" /> CÓDIGO ANTI-FRAUDE ÚNICO
-        </div>
-      </div>
+      )}
 
       {/* INFORMAÇÕES DE OPERAÇÃO E RODAPÉ */}
-      <div className="border-t border-black pt-1.5 text-[9px] text-center space-y-0.5">
-        <div>DATA: {formatDateTime(ficha.data_emissao)}</div>
-        <div>
-          OP: {ficha.operador} | CX: {ficha.caixa_id.slice(-6)}
+      {(showDataHora || showOperador || (showRodape && config.rodape_cupom)) && (
+        <div className="border-t border-black pt-1.5 text-[9px] text-center space-y-0.5">
+          {showDataHora && <div>DATA: {formatDateTime(ficha.data_emissao)}</div>}
+          {showOperador && (
+            <div>
+              OP: {ficha.operador} | CX: {ficha.caixa_id.slice(-6)}
+            </div>
+          )}
+          {showRodape && config.rodape_cupom && (
+            <div className="text-[9px] font-bold italic pt-1 border-t border-dashed border-gray-400 mt-1">
+              {config.rodape_cupom}
+            </div>
+          )}
         </div>
-        <div className="text-[9px] font-bold italic pt-1 border-t border-dashed border-gray-400 mt-1">
-          {config.rodape_cupom || 'Válido apenas para o dia do evento.'}
-        </div>
-      </div>
+      )}
 
       {showCutLine && config.corte_automatico && (
         <div className="flex items-center justify-center gap-1 text-[8px] text-gray-400 mt-2 border-t border-dotted border-gray-400 pt-1">

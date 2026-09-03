@@ -55,18 +55,18 @@ export default function TicketValidator() {
           Validador Anti-Fraude de Fichas (Balcão de Entrega)
         </h2>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Faça a leitura do QR Code ou digite o código de validação / sequencial para dar baixa na
-          ficha entregue ao cliente.
+          Faça a leitura do QR Code ou digite o código de validação / número sequencial para dar
+          baixa na ficha entregue ao cliente.
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* ÁREA DE SCANNER / ENTRADA DE CÓDIGO */}
+        {/* ÁREA DE ENTRADA DE CÓDIGO */}
         <div className="lg:col-span-6 space-y-6">
           <div className="p-6 rounded-2xl border-2 border-primary/30 bg-card shadow-sm space-y-4">
             <div className="flex items-center gap-2 text-primary font-bold text-sm">
-              <Scan className="w-5 h-5" />
-              <span>Entrada de Leitor de Código de Barras / QR Code / Manual</span>
+              <QrCode className="w-5 h-5" />
+              <span>Validação via QR Code ou Código da Ficha</span>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -74,15 +74,15 @@ export default function TicketValidator() {
                 <Input
                   ref={inputRef}
                   type="text"
-                  placeholder="Escaneie o QR Code ou digite o código (ex: 8B4A-12F0 ou 1)..."
+                  placeholder="Aponte a câmera pro QR Code ou digite o código (ex: 8B4A-12F0 ou 1)..."
                   value={codigoInput}
                   onChange={(e) => setCodigoInput(e.target.value)}
                   className="h-16 text-lg md:text-xl font-mono font-bold px-4 border-2 border-primary focus-visible:ring-primary uppercase tracking-wider"
                   autoFocus
                 />
                 <p className="text-[11px] text-muted-foreground mt-1.5">
-                  Dica: Se estiver usando leitor USB/Bluetooth, o leitor enviará o código e
-                  pressionará Enter automaticamente.
+                  Dica: Digite o número da ficha (ex: 1) ou o código de autenticação impresso e
+                  pressione Enter.
                 </p>
               </div>
 

@@ -9,7 +9,7 @@ interface QRCodeSVGProps {
 }
 
 // Pseudo-random but deterministic matrix generator based on string hash
-// Creates clean, visually distinct QR-like 2D barcode patterns for thermal receipt rendering
+// Creates clean, visually distinct QR-Code 2D matrix patterns for thermal receipt rendering
 function generateMatrix(text: string, size = 21): boolean[][] {
   const matrix: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false))
 

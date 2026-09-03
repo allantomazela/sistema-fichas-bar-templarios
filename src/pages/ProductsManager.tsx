@@ -26,6 +26,9 @@ import {
   Palette,
   CheckCircle2,
   XCircle,
+  Image as ImageIcon,
+  X,
+  Upload,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -48,6 +51,7 @@ export default function ProductsManager() {
   // Modal Produto
   const [isProdModalOpen, setIsProdModalOpen] = useState(false)
   const [editingProdId, setEditingProdId] = useState<string | null>(null)
+  const [prodImageInputRef, setProdImageInputRef] = useState<HTMLInputElement | null>(null)
   const [prodForm, setProdForm] = useState<{
     nome: string
     categoria_id: string
@@ -58,6 +62,8 @@ export default function ProductsManager() {
     descricao: string
     is_combo: boolean
     itens_combo: ComboItem[]
+    imagem_base64?: string
+    imprimir_imagem_ficha?: boolean
   }>({
     nome: '',
     categoria_id: categorias[0]?.id || '',
@@ -68,6 +74,8 @@ export default function ProductsManager() {
     descricao: '',
     is_combo: false,
     itens_combo: [],
+    imagem_base64: undefined,
+    imprimir_imagem_ficha: false,
   })
 
   // Modal Categoria
@@ -105,6 +113,8 @@ export default function ProductsManager() {
       descricao: '',
       is_combo: false,
       itens_combo: [],
+      imagem_base64: undefined,
+      imprimir_imagem_ficha: false,
     })
     setIsProdModalOpen(true)
   }
@@ -121,8 +131,29 @@ export default function ProductsManager() {
       descricao: prod.descricao || '',
       is_combo: !!prod.is_combo,
       itens_combo: prod.itens_combo ? [...prod.itens_combo] : [],
+      imagem_base64: prod.imagem_base64,
+      imprimir_imagem_ficha: prod.imprimir_imagem_ficha ?? false,
     })
     setIsProdModalOpen(true)
+  }
+
+  // Upload local de imagem de produto (base64 offline)
+  const handleProdImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Selecione uma imagem válida (PNG, JPG, WebP).')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string
+      setProdForm((prev) => ({ ...prev, imagem_base64: base64 }))
+      toast.success('Imagem carregada com sucesso!')
+    }
+    reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
   const handleSaveProd = (e: React.FormEvent) => {
@@ -335,6 +366,7 @@ export default function ProductsManager() {
               <thead className="bg-muted/50 text-muted-foreground font-semibold border-b border-border">
                 <tr>
                   <th className="p-3">Cód.</th>
+                  <th className="p-3">Foto</th>
                   <th className="p-3">Nome do Produto</th>
                   <th className="p-3">Categoria</th>
                   <th className="p-3">Preço</th>
@@ -346,7 +378,7 @@ export default function ProductsManager() {
               <tbody className="divide-y divide-border">
                 {filteredProdutos.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
                       Nenhum produto cadastrado com esses filtros.
                     </td>
                   </tr>
@@ -357,6 +389,19 @@ export default function ProductsManager() {
                       <tr key={prod.id} className="hover:bg-muted/20">
                         <td className="p-3 font-mono font-bold text-muted-foreground">
                           #{prod.codigo_rapido}
+                        </td>
+                        <td className="p-3">
+                          {prod.imagem_base64 ? (
+                            <img
+                              src={prod.imagem_base64}
+                              alt={prod.nome}
+                              className="w-10 h-10 object-cover rounded-lg border border-border"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-muted-foreground">
+                              <ImageIcon className="w-5 h-5 opacity-40" />
+                            </div>
+                          )}
                         </td>
                         <td className="p-3 font-bold text-foreground">
                           <div className="flex items-center gap-2">
@@ -576,6 +621,86 @@ export default function ProductsManager() {
                   onChange={(e) => setProdForm({ ...prodForm, descricao: e.target.value })}
                   className="h-11 text-sm"
                 />
+              </div>
+            </div>
+
+            {/* UPLOAD LOCAL DA FOTO DO PRODUTO (BASE64 OFFLINE) */}
+            <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
+              <Label className="text-xs font-bold uppercase text-muted-foreground block">
+                Imagem do Produto (Offline / Base64)
+              </Label>
+              <input
+                ref={(el) => setProdImageInputRef(el)}
+                type="file"
+                accept="image/*"
+                onChange={handleProdImageChange}
+                className="hidden"
+              />
+              <div className="flex items-center gap-4">
+                {prodForm.imagem_base64 ? (
+                  <div className="relative group">
+                    <img
+                      src={prodForm.imagem_base64}
+                      alt="Prévia do Produto"
+                      className="w-20 h-20 object-cover rounded-xl border-2 border-primary/40 shadow-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setProdForm((prev) => ({ ...prev, imagem_base64: undefined }))}
+                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-destructive text-white flex items-center justify-center shadow-md hover:scale-110 transition-transform"
+                      title="Remover imagem"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    onClick={() => prodImageInputRef?.click()}
+                    className="w-20 h-20 rounded-xl border-2 border-dashed border-border hover:border-primary/60 cursor-pointer flex flex-col items-center justify-center text-muted-foreground hover:text-foreground bg-background transition-all shrink-0"
+                  >
+                    <ImageIcon className="w-6 h-6 mb-1 opacity-60" />
+                    <span className="text-[10px] font-bold">Adicionar</span>
+                  </div>
+                )}
+
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => prodImageInputRef?.click()}
+                      className="text-xs font-semibold gap-1.5 h-8"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      {prodForm.imagem_base64 ? 'Alterar Foto' : 'Selecionar Foto'}
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Aparece no card touch do PDV para facilitar a identificação rápida pelo
+                    operador.
+                  </p>
+
+                  {/* OPÇÃO DE IMPRIMIR NA FICHA */}
+                  {prodForm.imagem_base64 && (
+                    <div className="flex items-center justify-between pt-1 border-t border-border/60">
+                      <div>
+                        <span className="text-xs font-bold text-foreground">
+                          Imprimir foto na ficha
+                        </span>
+                        <p className="text-[10px] text-muted-foreground">
+                          Imprime versão PB térmica na ficha
+                        </p>
+                      </div>
+                      <Switch
+                        checked={!!prodForm.imprimir_imagem_ficha}
+                        onCheckedChange={(val) =>
+                          setProdForm({ ...prodForm, imprimir_imagem_ficha: val })
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

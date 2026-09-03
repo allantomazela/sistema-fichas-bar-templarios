@@ -374,6 +374,8 @@ export class LocalDatabaseService {
                 operador: params.operador,
                 caixa_id: params.caixaId,
                 status: 'emitida',
+                produto_imagem_base64: subProd?.imagem_base64,
+                imprimir_imagem_ficha: subProd?.imprimir_imagem_ficha,
               })
               seqFicha++
             }
@@ -403,6 +405,8 @@ export class LocalDatabaseService {
             operador: params.operador,
             caixa_id: params.caixaId,
             status: 'emitida',
+            produto_imagem_base64: prod.imagem_base64,
+            imprimir_imagem_ficha: prod.imprimir_imagem_ficha,
           })
           seqFicha++
         }
@@ -429,6 +433,8 @@ export class LocalDatabaseService {
           operador: params.operador,
           caixa_id: params.caixaId,
           status: 'emitida',
+          produto_imagem_base64: prod.imagem_base64,
+          imprimir_imagem_ficha: prod.imprimir_imagem_ficha,
         })
         seqFicha++
       }

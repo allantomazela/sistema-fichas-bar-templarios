@@ -262,6 +262,17 @@ export default function Index() {
                       )}
                     </div>
 
+                    {/* IMAGEM DO PRODUTO (SE HOUVER) */}
+                    {prod.imagem_base64 && (
+                      <div className="w-full h-24 mb-2 overflow-hidden rounded-xl border border-border/60 bg-muted/20 flex items-center justify-center">
+                        <img
+                          src={prod.imagem_base64}
+                          alt={prod.nome}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      </div>
+                    )}
+
                     {/* CORPO DO CARD: NOME DO PRODUTO */}
                     <div className="w-full my-1">
                       <div className="font-bold text-sm text-foreground leading-snug line-clamp-2 group-hover:text-primary transition-colors">

@@ -30,6 +30,8 @@ export interface Produto {
   descricao?: string
   is_combo?: boolean
   itens_combo?: ComboItem[] // Para desmembrar combos em fichas individuais
+  imagem_base64?: string // Imagem do produto em base64 (offline-first)
+  imprimir_imagem_ficha?: boolean // Se viável, imprimir imagem do produto na ficha
 }
 
 export interface Caixa {
@@ -106,6 +108,8 @@ export interface Ficha {
   status: StatusFicha
   data_utilizacao?: string
   operador_validacao?: string
+  produto_imagem_base64?: string
+  imprimir_imagem_ficha?: boolean
 }
 
 export interface Configuracoes {
@@ -113,6 +117,7 @@ export interface Configuracoes {
   subtitulo_evento: string
   cabecalho_cupom: string
   rodape_cupom: string
+  logomarca_base64?: string // Logomarca do evento em base64
   largura_bobina: LarguraBobina
   corte_automatico: boolean
   modo_impressao_padrao: 'individual' | 'agrupado' // individual = 1 ficha por item
@@ -125,6 +130,17 @@ export interface Configuracoes {
   cidade_pix?: string
   salt_seguranca: string
   tema: 'light' | 'dark'
+
+  // Personalização da Ficha Impressa
+  ficha_mostrar_cabecalho?: boolean // padrão true
+  ficha_mostrar_logo?: boolean // padrão true
+  ficha_mostrar_qrcode?: boolean // padrão true
+  ficha_mostrar_hash?: boolean // código hash anti-fraude (padrão true)
+  ficha_mostrar_preco?: boolean // padrão true
+  ficha_mostrar_data_hora?: boolean // padrão true
+  ficha_mostrar_operador?: boolean // padrão true
+  ficha_mostrar_rodape?: boolean // padrão true
+  ficha_mostrar_imagem_produto?: boolean // se o produto tiver imagem (padrão false)
 }
 
 export interface CartItem {
