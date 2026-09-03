@@ -1,0 +1,272 @@
+/* Global styles - Theme, font, utilities, animations and global components */
+
+/* CHANGE THE FONT BELOW TO WHATEVER YOU WANT */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Tema Claro: Azul corporativo/marinho (#0F2B48, #1E40AF), Azul de Ação (#3B82F6), Fundo Branco Puro / Cinza (#F8FAFC) */
+    --background: 210 40% 98%; /* #F8FAFC */
+    --foreground: 214 65% 17%; /* #0F2B48 */
+
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 214 65% 17%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 214 65% 17%;
+
+    --primary: 221 83% 40%; /* #1E40AF */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 91% 60%; /* #3B82F6 */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 25% 40%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 221 83% 40%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 40%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 214 65% 17%; /* #0F2B48 */
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 214 60% 25%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 214 60% 22%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  .dark {
+    /* Dark Mode: Fundo #0B132B / #1C2541, superfícies #1E293B, destaques #60A5FA, tipografia #F8FAFC */
+    --background: 224 60% 11%; /* #0B132B */
+    --foreground: 210 40% 98%; /* #F8FAFC */
+
+    --card: 222 47% 17%; /* #1C2541 */
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 17%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 213 94% 68%; /* #60A5FA */
+    --primary-foreground: 224 60% 11%;
+
+    --secondary: 217 91% 60%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 217 33% 25%;
+    --muted-foreground: 215 20% 75%;
+
+    --accent: 222 40% 24%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 33% 25%;
+    --input: 217 33% 25%;
+    --ring: 213 94% 68%;
+
+    --sidebar-background: 224 65% 8%; /* #060B18 */
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 213 94% 68%;
+    --sidebar-primary-foreground: 224 60% 11%;
+    --sidebar-accent: 222 47% 18%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 47% 15%;
+    --sidebar-ring: 213 94% 68%;
+  }
+
+  /* NEVER REMOVE THIS */
+  section[aria-label='Notifications alt+T'] {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
+
+@layer utilities {
+  /* KEEP ALL THE ANIMATIONS CLASSES THAT ARE USED BELOW */
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-in-up {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-in-down {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out-up {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out-down {
+    from {
+      transform: translateY(0);
+      opacity: 1;
+    }
+    to {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      transform: translateY(10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes slide-down {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  @keyframes spotlight {
+    from {
+      opacity: 0;
+      transform: translate(-72%, -62%) scale(0.5);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -40%) scale(1);
+    }
+  }
+
+  .animate-accordion-down {
+    animation: accordion-down 0.2s ease-out;
+  }
+
+  .animate-accordion-up {
+    animation: accordion-up 0.2s ease-out;
+  }
+
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out;
+  }
+
+  .animate-fade-out {
+    animation: fade-out 0.5s ease-out;
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.6s ease-out;
+  }
+
+  .animate-fade-in-down {
+    animation: fade-in-down 0.6s ease-out;
+  }
+
+  .animate-fade-out-up {
+    animation: fade-out-up 0.6s ease-out;
+  }
+
+  .animate-fade-out-down {
+    animation: fade-out-down 0.6s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 0.6s ease-out;
+  }
+
+  .animate-slide-down {
+    animation: slide-down 0.6s ease-out;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-spotlight {
+    animation: spotlight 2s ease forwards;
+  }
+}
