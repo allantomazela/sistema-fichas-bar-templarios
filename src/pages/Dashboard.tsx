@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { usePos } from '@/context/PosContext'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
 import {
@@ -13,11 +13,17 @@ import {
   QrCode,
   Gift,
   ArrowUpRight,
+  ArrowDownLeft,
   Flame,
   CheckCircle2,
   Calendar,
   Sparkles,
+  Filter,
+  History,
+  Package,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -37,11 +43,70 @@ import {
 } from 'recharts'
 
 export default function Dashboard() {
-  const { vendas, fichas, produtos, config, caixaAtivo } = usePos()
+  const { vendas, fichas, produtos, config, caixaAtivo, movimentacoes } = usePos()
 
-  // Processamento consolidado das métricas locais
+  // Período selecionado: 'evento' | 'hoje' | 'custom'
+  const [periodoTipo, setPeriodoTipo] = useState<'evento' | 'hoje' | 'custom'>('evento')
+
+  // Datas para o intervalo personalizado (formato datetime-local YYYY-MM-DDTHH:mm)
+  const [customInicio, setCustomInicio] = useState(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    return d.toISOString().slice(0, 16)
+  })
+  const [customFim, setCustomFim] = useState(() => {
+    const d = new Date()
+    d.setHours(23, 59, 59, 999)
+    return d.toISOString().slice(0, 16)
+  })
+
+  // Vendas, Fichas e Movimentações filtradas pelo período
+  const { filteredVendas, filteredFichas, filteredMovimentacoes } = useMemo(() => {
+    const now = new Date()
+    const todayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      0,
+      0,
+      0,
+      0,
+    ).getTime()
+    const todayEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      23,
+      59,
+      59,
+      999,
+    ).getTime()
+
+    const customStartTime = customInicio ? new Date(customInicio).getTime() : 0
+    const customEndTime = customFim ? new Date(customFim).getTime() : Infinity
+
+    const isDateInPeriod = (dateIso: string) => {
+      const t = new Date(dateIso).getTime()
+      if (periodoTipo === 'evento') return true
+      if (periodoTipo === 'hoje') return t >= todayStart && t <= todayEnd
+      if (periodoTipo === 'custom') {
+        const afterStart = isNaN(customStartTime) ? true : t >= customStartTime
+        const beforeEnd = isNaN(customEndTime) ? true : t <= customEndTime
+        return afterStart && beforeEnd
+      }
+      return true
+    }
+
+    return {
+      filteredVendas: vendas.filter((v) => isDateInPeriod(v.data_hora)),
+      filteredFichas: fichas.filter((f) => isDateInPeriod(f.data_emissao)),
+      filteredMovimentacoes: movimentacoes.filter((m) => isDateInPeriod(m.data_hora)),
+    }
+  }, [vendas, fichas, movimentacoes, periodoTipo, customInicio, customFim])
+
+  // Processamento consolidado das métricas locais respeitando os filtros
   const metrics = useMemo(() => {
-    const validVendas = vendas.filter((v) => v.status === 'concluida')
+    const validVendas = filteredVendas.filter((v) => v.status === 'concluida')
     const totalVendasCount = validVendas.length
     const valorTotalVendas = validVendas.reduce((acc, v) => acc + v.total, 0)
     const ticketMedio = totalVendasCount > 0 ? valorTotalVendas / totalVendasCount : 0
@@ -85,7 +150,7 @@ export default function Dashboard() {
     })
 
     // Fichas: emitidas vs validadas (baixadas) vs restantes (estoque na mão do cliente)
-    const fichasValidas = fichas.filter((f) => f.status !== 'cancelada')
+    const fichasValidas = filteredFichas.filter((f) => f.status !== 'cancelada')
     const totalFichasEmitidas = fichasValidas.length
     const totalFichasValidadas = fichasValidas.filter((f) => f.status === 'utilizada').length
     const fichasRestantes = Math.max(0, totalFichasEmitidas - totalFichasValidadas)
@@ -167,6 +232,24 @@ export default function Dashboard() {
       .sort((a, b) => b.emitidas - a.emitidas)
       .slice(0, 6)
 
+    // Métricas de Sangrias e Suprimentos
+    let totalSangrias = 0
+    let countSangrias = 0
+    let totalSuprimentos = 0
+    let countSuprimentos = 0
+
+    filteredMovimentacoes.forEach((m) => {
+      if (m.tipo === 'sangria') {
+        totalSangrias += m.valor
+        countSangrias++
+      } else if (m.tipo === 'suprimento') {
+        totalSuprimentos += m.valor
+        countSuprimentos++
+      }
+    })
+
+    const saldoLiquidoMovimentacoes = totalSuprimentos - totalSangrias
+
     return {
       totalVendasCount,
       valorTotalVendas,
@@ -189,8 +272,13 @@ export default function Dashboard() {
       picosDeMovimento,
       paymentData,
       topFichasPorProduto,
+      totalSangrias,
+      countSangrias,
+      totalSuprimentos,
+      countSuprimentos,
+      saldoLiquidoMovimentacoes,
     }
-  }, [vendas, fichas])
+  }, [filteredVendas, filteredFichas, filteredMovimentacoes])
 
   return (
     <div className="h-full flex flex-col overflow-y-auto p-4 md:p-6 space-y-6 bg-background text-foreground">
@@ -216,17 +304,85 @@ export default function Dashboard() {
         <div className="flex items-center gap-3">
           <Badge
             variant="outline"
-            className="px-3 py-1 font-mono text-xs flex items-center gap-1.5 bg-card border-border"
+            className="px-3 py-1 font-mono text-xs flex items-center gap-1.5 bg-card border-border shrink-0"
           >
             <Calendar className="w-3.5 h-3.5 text-primary" />
             <span>{config.nome_evento || 'Evento Atual'}</span>
           </Badge>
           {caixaAtivo && (
-            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[11px] font-bold">
+            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[11px] font-bold shrink-0">
               Caixa Ativo: {caixaAtivo.operador}
             </Badge>
           )}
         </div>
+      </div>
+
+      {/* SELETOR DE PERÍODO (TOUCH-FRIENDLY) */}
+      <div className="p-3.5 rounded-2xl border border-border bg-card shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Filter className="w-4 h-4 text-primary shrink-0" />
+          <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            Período de Análise:
+          </span>
+          <div className="flex items-center gap-1.5 bg-muted/60 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setPeriodoTipo('evento')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                periodoTipo === 'evento'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Evento inteiro
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriodoTipo('hoje')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                periodoTipo === 'hoje'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={() => setPeriodoTipo('custom')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                periodoTipo === 'custom'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Intervalo personalizado
+            </button>
+          </div>
+        </div>
+
+        {periodoTipo === 'custom' && (
+          <div className="flex flex-wrap items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-border">
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-muted-foreground font-semibold">De:</span>
+              <Input
+                type="datetime-local"
+                value={customInicio}
+                onChange={(e) => setCustomInicio(e.target.value)}
+                className="h-8 text-xs font-mono w-44"
+              />
+            </div>
+            <div className="flex items-center gap-1 text-xs">
+              <span className="text-muted-foreground font-semibold">Até:</span>
+              <Input
+                type="datetime-local"
+                value={customFim}
+                onChange={(e) => setCustomFim(e.target.value)}
+                className="h-8 text-xs font-mono w-44"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* CARDS TOTALIZADORES PRINCIPAIS */}
@@ -432,6 +588,135 @@ export default function Dashboard() {
             Reforce o atendimento no balcão e nos caixas 15 minutos antes dos horários de pico para
             evitar filas.
           </div>
+        </div>
+      </div>
+
+      {/* SEÇÃO DE SANGRIAS E SUPRIMENTOS (RESPEITANDO O FILTRO DE PERÍODO) */}
+      <div className="p-5 rounded-2xl border border-border bg-card shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+          <div>
+            <h3 className="font-bold text-base text-foreground flex items-center gap-2">
+              <History className="w-5 h-5 text-amber-500" />
+              Sangrias e Suprimentos de Caixa no Período
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Movimentações em dinheiro físico realizadas pelos caixas (entradas de troco e
+              retiradas da gaveta).
+            </p>
+          </div>
+          <Badge variant="outline" className="font-mono text-xs w-fit">
+            {filteredMovimentacoes.length} movimentação(ões)
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/* TOTAL SUPRIMENTOS */}
+          <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 uppercase block">
+                Total Suprimentos (+Troco)
+              </span>
+              <span className="text-2xl font-black font-mono text-emerald-600 dark:text-emerald-400 mt-1 block">
+                +{formatCurrency(metrics.totalSuprimentos)}
+              </span>
+              <span className="text-[11px] text-muted-foreground mt-0.5 block">
+                {metrics.countSuprimentos} entrada(s) de troco
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-600">
+              <ArrowDownLeft className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* TOTAL SANGRIAS */}
+          <div className="p-4 rounded-xl border border-rose-500/20 bg-rose-500/10 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-rose-700 dark:text-rose-300 uppercase block">
+                Total Sangrias (-Retiradas)
+              </span>
+              <span className="text-2xl font-black font-mono text-rose-600 dark:text-rose-400 mt-1 block">
+                -{formatCurrency(metrics.totalSangrias)}
+              </span>
+              <span className="text-[11px] text-muted-foreground mt-0.5 block">
+                {metrics.countSangrias} recolhimento(s) para cofre
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-600">
+              <ArrowUpRight className="w-5 h-5" />
+            </div>
+          </div>
+
+          {/* SALDO LÍQUIDO */}
+          <div className="p-4 rounded-xl border border-border bg-muted/30 flex items-center justify-between">
+            <div>
+              <span className="text-[11px] font-bold text-muted-foreground uppercase block">
+                Saldo Líquido Movimentado
+              </span>
+              <span
+                className={`text-2xl font-black font-mono mt-1 block ${
+                  metrics.saldoLiquidoMovimentacoes >= 0
+                    ? 'text-foreground'
+                    : 'text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                {metrics.saldoLiquidoMovimentacoes >= 0 ? '+' : ''}
+                {formatCurrency(metrics.saldoLiquidoMovimentacoes)}
+              </span>
+              <span className="text-[11px] text-muted-foreground mt-0.5 block">
+                Impacto líquido na gaveta
+              </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-muted text-foreground">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* LISTA DAS ÚLTIMAS MOVIMENTAÇÕES NO PERÍODO */}
+        <div className="overflow-x-auto max-h-60 rounded-xl border border-border">
+          {filteredMovimentacoes.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-6">
+              Nenhuma movimentação de sangria ou suprimento no período selecionado.
+            </p>
+          ) : (
+            <table className="w-full text-xs text-left">
+              <thead className="bg-muted/50 text-muted-foreground font-semibold border-b border-border">
+                <tr>
+                  <th className="p-2.5">Data / Hora</th>
+                  <th className="p-2.5">Tipo</th>
+                  <th className="p-2.5">Valor</th>
+                  <th className="p-2.5">Motivo / Justificativa</th>
+                  <th className="p-2.5">Operador</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filteredMovimentacoes.slice(0, 10).map((mov) => (
+                  <tr key={mov.id} className="hover:bg-muted/20">
+                    <td className="p-2.5 font-mono text-muted-foreground">
+                      {formatDateTime(mov.data_hora)}
+                    </td>
+                    <td className="p-2.5">
+                      {mov.tipo === 'sangria' ? (
+                        <Badge variant="destructive" className="text-[10px] uppercase font-bold">
+                          Sangria
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] uppercase font-bold">
+                          Suprimento
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="p-2.5 font-mono font-bold">
+                      {mov.tipo === 'sangria' ? '-' : '+'}
+                      {formatCurrency(mov.valor)}
+                    </td>
+                    <td className="p-2.5 text-foreground max-w-[200px] truncate">{mov.motivo}</td>
+                    <td className="p-2.5 text-muted-foreground">{mov.operador}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
 

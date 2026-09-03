@@ -25,6 +25,9 @@ export const INITIAL_PRODUTOS: Produto[] = [
     emite_ficha_individual: true,
     ativo: true,
     descricao: 'Com ou sem gás',
+    controla_estoque: true,
+    estoque_atual: 80,
+    estoque_minimo: 15,
   },
   {
     id: 'prod-refri',
@@ -35,6 +38,9 @@ export const INITIAL_PRODUTOS: Produto[] = [
     emite_ficha_individual: true,
     ativo: true,
     descricao: 'Coca-Cola, Guaraná, Fanta',
+    controla_estoque: true,
+    estoque_atual: 45,
+    estoque_minimo: 10,
   },
   {
     id: 'prod-cerveja-lata',
@@ -45,6 +51,9 @@ export const INITIAL_PRODUTOS: Produto[] = [
     emite_ficha_individual: true,
     ativo: true,
     descricao: 'Amstel / Heineken',
+    controla_estoque: true,
+    estoque_atual: 8,
+    estoque_minimo: 12,
   },
   {
     id: 'prod-suco-natural',
@@ -77,6 +86,9 @@ export const INITIAL_PRODUTOS: Produto[] = [
     emite_ficha_individual: true,
     ativo: true,
     descricao: 'Pastel crocante de carne moída temperada',
+    controla_estoque: true,
+    estoque_atual: 25,
+    estoque_minimo: 5,
   },
   {
     id: 'prod-pastel-queijo',
@@ -87,6 +99,9 @@ export const INITIAL_PRODUTOS: Produto[] = [
     emite_ficha_individual: true,
     ativo: true,
     descricao: 'Mussarela derretida',
+    controla_estoque: true,
+    estoque_atual: 30,
+    estoque_minimo: 5,
   },
   {
     id: 'prod-espetinho',

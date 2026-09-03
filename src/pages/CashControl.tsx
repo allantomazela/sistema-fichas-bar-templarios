@@ -632,6 +632,60 @@ export default function CashControl() {
               </div>
             </div>
 
+            {/* DISCRIMINAÇÃO DE MOVIMENTAÇÕES NESTE TURNO */}
+            {resumoAtivo && (
+              <div className="p-3.5 rounded-xl border border-border bg-muted/20 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="flex items-center gap-1.5">
+                    <History className="w-3.5 h-3.5 text-primary" />
+                    Movimentações Registradas no Turno ({resumoAtivo.movimentacoes.length})
+                  </span>
+                  <span className="font-mono text-muted-foreground">
+                    Líquido:{' '}
+                    {resumoAtivo.totalSuprimento - resumoAtivo.totalSangria >= 0 ? '+' : ''}
+                    {formatCurrency(resumoAtivo.totalSuprimento - resumoAtivo.totalSangria)}
+                  </span>
+                </div>
+
+                {resumoAtivo.movimentacoes.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground italic">
+                    Nenhuma sangria ou suprimento registrado neste turno.
+                  </p>
+                ) : (
+                  <div className="max-h-32 overflow-y-auto space-y-1.5 pr-1">
+                    {resumoAtivo.movimentacoes.map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between text-[11px] p-2 rounded-lg bg-background border border-border"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          {m.tipo === 'sangria' ? (
+                            <Badge
+                              variant="destructive"
+                              className="text-[9px] py-0 px-1 uppercase font-bold"
+                            >
+                              Sangria
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-emerald-600 text-white text-[9px] py-0 px-1 uppercase font-bold">
+                              Suprimento
+                            </Badge>
+                          )}
+                          <span className="truncate max-w-[150px] font-medium" title={m.motivo}>
+                            {m.motivo}
+                          </span>
+                        </div>
+                        <span className="font-mono font-bold shrink-0">
+                          {m.tipo === 'sangria' ? '-' : '+'}
+                          {formatCurrency(m.valor)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div>
               <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
                 Observações de Fechamento (Opcional)
@@ -646,6 +700,7 @@ export default function CashControl() {
             </div>
 
             <DialogFooter className="pt-4 border-t border-border flex justify-end gap-2">
+              {' '}
               <Button type="button" variant="outline" onClick={() => setIsFecharOpen(false)}>
                 Cancelar
               </Button>

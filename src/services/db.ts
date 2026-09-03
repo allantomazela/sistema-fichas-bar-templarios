@@ -173,6 +173,27 @@ export class LocalDatabaseService {
     this.saveProdutos(produtos)
   }
 
+  // Reposição rápida de estoque (+quantidade)
+  static reporEstoque(id: string, quantidadeAdicional: number): Produto | null {
+    const produtos = this.getProdutos()
+    let updated: Produto | null = null
+    const novosProdutos = produtos.map((p) => {
+      if (p.id === id) {
+        const estoqueAtual = p.estoque_atual ?? 0
+        const novoEstoque = Math.max(0, estoqueAtual + quantidadeAdicional)
+        updated = {
+          ...p,
+          controla_estoque: true,
+          estoque_atual: novoEstoque,
+        }
+        return updated
+      }
+      return p
+    })
+    this.saveProdutos(novosProdutos)
+    return updated
+  }
+
   // CAIXAS / TURNOS
   static getCaixas(): Caixa[] {
     this.initDatabase()
@@ -439,6 +460,36 @@ export class LocalDatabaseService {
         seqFicha++
       }
     })
+
+    // Baixa automática de estoque para produtos com estoque controlado
+    // Calcular o consumo por produto_id (incluindo desmembramento de combos)
+    const consumoEstoque = new Map<string, number>()
+    params.itens.forEach((cartItem) => {
+      const prod = cartItem.produto
+      if (prod.is_combo && prod.itens_combo && prod.itens_combo.length > 0) {
+        prod.itens_combo.forEach((sub) => {
+          const totalQtdSub = cartItem.quantidade * sub.quantidade
+          consumoEstoque.set(
+            sub.produto_id,
+            (consumoEstoque.get(sub.produto_id) || 0) + totalQtdSub,
+          )
+        })
+      } else {
+        consumoEstoque.set(prod.id, (consumoEstoque.get(prod.id) || 0) + cartItem.quantidade)
+      }
+    })
+
+    const updatedProdutos = produtos.map((p) => {
+      const qtdConsumida = consumoEstoque.get(p.id)
+      if (qtdConsumida && p.controla_estoque && p.estoque_atual !== undefined) {
+        return {
+          ...p,
+          estoque_atual: Math.max(0, p.estoque_atual - qtdConsumida),
+        }
+      }
+      return p
+    })
+    this.saveProdutos(updatedProdutos)
 
     // Salva tudo
     const vendas = this.getVendas()

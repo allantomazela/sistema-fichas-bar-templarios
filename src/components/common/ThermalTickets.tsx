@@ -173,6 +173,14 @@ interface FechamentoTicketProps {
     totalSuprimento: number
     totalSangria: number
     saldoDinheiroEsperado: number
+    movimentacoes?: Array<{
+      id: string
+      tipo: 'sangria' | 'suprimento'
+      valor: number
+      motivo: string
+      operador: string
+      data_hora: string
+    }>
   }
 }
 
@@ -293,6 +301,52 @@ export const ThermalFechamentoTicket: React.FC<FechamentoTicketProps> = ({
           <span>SALDO ESPERADO:</span>
           <span>{formatCurrency(resumo.saldoDinheiroEsperado)}</span>
         </div>
+      </div>
+
+      {/* SEÇÃO MOVIMENTAÇÕES DISCRIMINADAS (SANGRIA / SUPRIMENTO) */}
+      <div className="border-b border-black pb-2 mb-2">
+        <div className="font-bold text-[11px] uppercase mb-1">
+          MOVIMENTAÇÕES DO TURNO ({resumo.movimentacoes?.length || 0}):
+        </div>
+        {!resumo.movimentacoes || resumo.movimentacoes.length === 0 ? (
+          <div className="text-[9px] text-gray-500 italic">Nenhuma sangria ou suprimento</div>
+        ) : (
+          <div className="space-y-1">
+            {resumo.movimentacoes.map((mov) => {
+              const hora = new Date(mov.data_hora).toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+              const isSangria = mov.tipo === 'sangria'
+              return (
+                <div
+                  key={mov.id}
+                  className="text-[9px] border-b border-dotted border-gray-300 pb-0.5"
+                >
+                  <div className="flex justify-between font-bold">
+                    <span>
+                      {hora} [{isSangria ? 'SANGRIA' : 'SUPRIM.'}]
+                    </span>
+                    <span>
+                      {isSangria ? '-' : '+'}
+                      {formatCurrency(mov.valor)}
+                    </span>
+                  </div>
+                  <div className="text-[8px] text-gray-600 truncate">
+                    {mov.motivo} ({mov.operador})
+                  </div>
+                </div>
+              )
+            })}
+            <div className="flex justify-between font-bold text-[10px] pt-1 border-t border-black mt-1">
+              <span>TOTAL LÍQUIDO MOVIMENTADO:</span>
+              <span>
+                {resumo.totalSuprimento - resumo.totalSangria >= 0 ? '+' : ''}
+                {formatCurrency(resumo.totalSuprimento - resumo.totalSangria)}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* CONFERÊNCIA ÀS CEGAS */}

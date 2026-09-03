@@ -232,34 +232,63 @@ export default function Index() {
               {filteredProdutos.map((prod) => {
                 const cat = categorias.find((c) => c.id === prod.categoria_id)
                 const itemInCart = carrinho.find((it) => it.produto.id === prod.id)
+                const isControlled = prod.controla_estoque && prod.estoque_atual !== undefined
+                const estoqueQtd = prod.estoque_atual ?? 0
+                const estoqueMin = prod.estoque_minimo ?? 10
+                const isEsgotado = isControlled && estoqueQtd <= 0
+                const isBaixo = isControlled && !isEsgotado && estoqueQtd <= estoqueMin
 
                 return (
                   <button
                     key={prod.id}
                     type="button"
-                    onClick={() => addToCart(prod)}
+                    disabled={isEsgotado}
+                    onClick={() => {
+                      if (isEsgotado) {
+                        toast.error(`Produto "${prod.nome}" está esgotado!`)
+                        return
+                      }
+                      addToCart(prod)
+                    }}
                     className={`relative group text-left p-3.5 rounded-2xl border-2 transition-all flex flex-col justify-between select-none active:scale-95 bg-card hover:shadow-lg ${
-                      itemInCart
-                        ? 'border-primary shadow-sm ring-2 ring-primary/20'
-                        : 'border-border hover:border-primary/40'
+                      isEsgotado
+                        ? 'opacity-60 cursor-not-allowed border-dashed border-destructive/40 bg-muted/40'
+                        : itemInCart
+                          ? 'border-primary shadow-sm ring-2 ring-primary/20'
+                          : 'border-border hover:border-primary/40'
                     }`}
                   >
-                    {/* TOPO DO CARD: CÓDIGO RÁPIDO & BADGE DE COMBO/INDIVIDUAL */}
+                    {/* TOPO DO CARD: CÓDIGO RÁPIDO & BADGES */}
                     <div className="flex items-start justify-between gap-1 w-full mb-2">
                       <span className="font-mono text-[11px] font-black px-2 py-0.5 rounded bg-muted text-muted-foreground">
                         #{prod.codigo_rapido}
                       </span>
-                      {prod.is_combo ? (
-                        <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] uppercase font-extrabold gap-1 py-0 px-1.5">
-                          <Sparkles className="w-3 h-3" /> COMBO
-                        </Badge>
-                      ) : (
-                        <span
-                          className="w-2.5 h-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: cat?.cor || '#3B82F6' }}
-                          title={cat?.nome}
-                        />
-                      )}
+                      <div className="flex items-center gap-1">
+                        {isControlled && (
+                          <span
+                            className={`font-mono text-[10px] font-black px-1.5 py-0.5 rounded ${
+                              isEsgotado
+                                ? 'bg-destructive text-destructive-foreground'
+                                : isBaixo
+                                  ? 'bg-amber-500 text-white animate-pulse'
+                                  : 'bg-muted text-muted-foreground'
+                            }`}
+                          >
+                            {isEsgotado ? 'ESGOTADO' : `${estoqueQtd} un`}
+                          </span>
+                        )}
+                        {prod.is_combo ? (
+                          <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px] uppercase font-extrabold gap-1 py-0 px-1.5">
+                            <Sparkles className="w-3 h-3" /> COMBO
+                          </Badge>
+                        ) : (
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: cat?.cor || '#3B82F6' }}
+                            title={cat?.nome}
+                          />
+                        )}
+                      </div>
                     </div>
 
                     {/* IMAGEM DO PRODUTO (SE HOUVER) */}

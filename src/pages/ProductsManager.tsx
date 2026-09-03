@@ -42,6 +42,7 @@ export default function ProductsManager() {
     addProduto,
     updateProduto,
     deleteProduto,
+    reporEstoque,
   } = usePos()
 
   const [activeTab, setActiveTab] = useState<'produtos' | 'categorias'>('produtos')
@@ -52,6 +53,12 @@ export default function ProductsManager() {
   const [isProdModalOpen, setIsProdModalOpen] = useState(false)
   const [editingProdId, setEditingProdId] = useState<string | null>(null)
   const [prodImageInputRef, setProdImageInputRef] = useState<HTMLInputElement | null>(null)
+
+  // Modal Reposição Rápida de Estoque
+  const [isReporModalOpen, setIsReporModalOpen] = useState(false)
+  const [reporProd, setReporProd] = useState<Produto | null>(null)
+  const [reporQtd, setReporQtd] = useState('50')
+
   const [prodForm, setProdForm] = useState<{
     nome: string
     categoria_id: string
@@ -64,6 +71,9 @@ export default function ProductsManager() {
     itens_combo: ComboItem[]
     imagem_base64?: string
     imprimir_imagem_ficha?: boolean
+    controla_estoque: boolean
+    estoque_atual: string
+    estoque_minimo: string
   }>({
     nome: '',
     categoria_id: categorias[0]?.id || '',
@@ -76,6 +86,9 @@ export default function ProductsManager() {
     itens_combo: [],
     imagem_base64: undefined,
     imprimir_imagem_ficha: false,
+    controla_estoque: false,
+    estoque_atual: '',
+    estoque_minimo: '10',
   })
 
   // Modal Categoria
@@ -115,6 +128,9 @@ export default function ProductsManager() {
       itens_combo: [],
       imagem_base64: undefined,
       imprimir_imagem_ficha: false,
+      controla_estoque: false,
+      estoque_atual: '',
+      estoque_minimo: '10',
     })
     setIsProdModalOpen(true)
   }
@@ -133,8 +149,30 @@ export default function ProductsManager() {
       itens_combo: prod.itens_combo ? [...prod.itens_combo] : [],
       imagem_base64: prod.imagem_base64,
       imprimir_imagem_ficha: prod.imprimir_imagem_ficha ?? false,
+      controla_estoque: !!prod.controla_estoque,
+      estoque_atual: prod.estoque_atual !== undefined ? String(prod.estoque_atual) : '',
+      estoque_minimo: prod.estoque_minimo !== undefined ? String(prod.estoque_minimo) : '10',
     })
     setIsProdModalOpen(true)
+  }
+
+  const handleOpenReporEstoque = (prod: Produto) => {
+    setReporProd(prod)
+    setReporQtd('50')
+    setIsReporModalOpen(true)
+  }
+
+  const handleConfirmRepor = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!reporProd) return
+    const qtdNum = parseInt(reporQtd, 10) || 0
+    if (qtdNum <= 0) {
+      toast.error('Informe uma quantidade válida para reposição.')
+      return
+    }
+    reporEstoque(reporProd.id, qtdNum)
+    setIsReporModalOpen(false)
+    setReporProd(null)
   }
 
   // Upload local de imagem de produto (base64 offline)
@@ -164,16 +202,24 @@ export default function ProductsManager() {
       return
     }
 
+    const payload = {
+      ...prodForm,
+      preco: precoNum,
+      controla_estoque: prodForm.controla_estoque,
+      estoque_atual:
+        prodForm.controla_estoque && prodForm.estoque_atual !== ''
+          ? Math.max(0, parseInt(prodForm.estoque_atual, 10) || 0)
+          : undefined,
+      estoque_minimo:
+        prodForm.controla_estoque && prodForm.estoque_minimo !== ''
+          ? Math.max(0, parseInt(prodForm.estoque_minimo, 10) || 0)
+          : undefined,
+    }
+
     if (editingProdId) {
-      updateProduto(editingProdId, {
-        ...prodForm,
-        preco: precoNum,
-      })
+      updateProduto(editingProdId, payload)
     } else {
-      addProduto({
-        ...prodForm,
-        preco: precoNum,
-      })
+      addProduto(payload)
     }
     setIsProdModalOpen(false)
   }
@@ -370,6 +416,7 @@ export default function ProductsManager() {
                   <th className="p-3">Nome do Produto</th>
                   <th className="p-3">Categoria</th>
                   <th className="p-3">Preço</th>
+                  <th className="p-3">Estoque</th>
                   <th className="p-3">Emissão de Ficha</th>
                   <th className="p-3">Status</th>
                   <th className="p-3 text-right">Ações</th>
@@ -378,13 +425,19 @@ export default function ProductsManager() {
               <tbody className="divide-y divide-border">
                 {filteredProdutos.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={9} className="p-8 text-center text-muted-foreground">
                       Nenhum produto cadastrado com esses filtros.
                     </td>
                   </tr>
                 ) : (
                   filteredProdutos.map((prod) => {
                     const cat = categorias.find((c) => c.id === prod.categoria_id)
+                    const isControlled = prod.controla_estoque && prod.estoque_atual !== undefined
+                    const estoqueQtd = prod.estoque_atual ?? 0
+                    const estoqueMin = prod.estoque_minimo ?? 10
+                    const isEsgotado = isControlled && estoqueQtd <= 0
+                    const isBaixo = isControlled && !isEsgotado && estoqueQtd <= estoqueMin
+
                     return (
                       <tr key={prod.id} className="hover:bg-muted/20">
                         <td className="p-3 font-mono font-bold text-muted-foreground">
@@ -430,6 +483,48 @@ export default function ProductsManager() {
                         <td className="p-3 font-mono font-bold text-sm">
                           {formatCurrency(prod.preco)}
                         </td>
+
+                        {/* COLUNA DE ESTOQUE COM DESTAQUE VISUAL E BOTÃO DE REPOSIÇÃO */}
+                        <td className="p-3">
+                          {isControlled ? (
+                            <div className="flex items-center gap-2">
+                              {isEsgotado ? (
+                                <Badge
+                                  variant="destructive"
+                                  className="font-mono font-black text-[11px] px-2"
+                                >
+                                  0 un (Esgotado)
+                                </Badge>
+                              ) : isBaixo ? (
+                                <Badge className="bg-amber-500 hover:bg-amber-600 text-white font-mono font-bold text-[11px] px-2">
+                                  {estoqueQtd} un (Baixo)
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="font-mono font-bold text-[11px] px-2 text-foreground border-emerald-500/50 bg-emerald-500/5"
+                                >
+                                  {estoqueQtd} un
+                                </Badge>
+                              )}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenReporEstoque(prod)}
+                                className="h-6 px-1.5 text-[10px] font-bold text-primary hover:bg-primary/10"
+                                title="Reposição rápida de estoque"
+                              >
+                                + Repor
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-[11px] italic">
+                              Não controlado
+                            </span>
+                          )}
+                        </td>
+
                         <td className="p-3">
                           {prod.is_combo ? (
                             <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
@@ -624,6 +719,59 @@ export default function ProductsManager() {
               </div>
             </div>
 
+            {/* CONTROLE DE ESTOQUE */}
+            <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5 text-primary" />
+                    Controle de Estoque
+                  </div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Se ativado, cada ficha emitida baixa a quantidade física em estoque.
+                  </div>
+                </div>
+                <Switch
+                  checked={prodForm.controla_estoque}
+                  onCheckedChange={(val) => setProdForm({ ...prodForm, controla_estoque: val })}
+                />
+              </div>
+
+              {prodForm.controla_estoque && (
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border">
+                  <div>
+                    <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
+                      Quantidade Atual em Estoque
+                    </Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Ex: 100"
+                      value={prodForm.estoque_atual}
+                      onChange={(e) => setProdForm({ ...prodForm, estoque_atual: e.target.value })}
+                      required={prodForm.controla_estoque}
+                      className="h-10 font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
+                      Alerta de Estoque Baixo (Mínimo)
+                    </Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="Ex: 10"
+                      value={prodForm.estoque_minimo}
+                      onChange={(e) => setProdForm({ ...prodForm, estoque_minimo: e.target.value })}
+                      className="h-10 font-mono"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* UPLOAD LOCAL DA FOTO DO PRODUTO (BASE64 OFFLINE) */}
             <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
               <Label className="text-xs font-bold uppercase text-muted-foreground block">
@@ -813,6 +961,76 @@ export default function ProductsManager() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* MODAL: REPOSIÇÃO RÁPIDA DE ESTOQUE */}
+      <Dialog open={isReporModalOpen} onOpenChange={setIsReporModalOpen}>
+        <DialogContent className="max-w-md bg-background text-foreground border border-border shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <Package className="w-5 h-5 text-primary" />
+              Reposição Rápida de Estoque
+            </DialogTitle>
+          </DialogHeader>
+
+          {reporProd && (
+            <form onSubmit={handleConfirmRepor} className="space-y-4 py-2">
+              <div className="p-3 rounded-xl bg-muted/30 border border-border">
+                <span className="text-xs text-muted-foreground block font-bold uppercase">
+                  Produto Selecionado
+                </span>
+                <span className="text-base font-black text-foreground block mt-0.5">
+                  {reporProd.nome}
+                </span>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                  <span>Estoque atual:</span>
+                  <Badge variant="outline" className="font-mono font-black text-xs">
+                    {reporProd.estoque_atual ?? 0} un
+                  </Badge>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
+                  Quantidade a Adicionar (+Estoque)
+                </Label>
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={reporQtd}
+                  onChange={(e) => setReporQtd(e.target.value)}
+                  required
+                  autoFocus
+                  className="h-12 text-2xl font-black font-mono"
+                />
+                <div className="flex gap-2 mt-2">
+                  {[10, 20, 50, 100].map((val) => (
+                    <Button
+                      key={val}
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setReporQtd(String(val))}
+                      className="text-xs font-mono font-bold"
+                    >
+                      +{val}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <DialogFooter className="pt-4 border-t border-border flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setIsReporModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="bg-primary hover:bg-primary/90 font-bold">
+                  Confirmar Reposição
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
 

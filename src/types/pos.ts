@@ -32,6 +32,9 @@ export interface Produto {
   itens_combo?: ComboItem[] // Para desmembrar combos em fichas individuais
   imagem_base64?: string // Imagem do produto em base64 (offline-first)
   imprimir_imagem_ficha?: boolean // Se viável, imprimir imagem do produto na ficha
+  controla_estoque?: boolean // Se true, o produto tem limite e baixa de estoque
+  estoque_atual?: number // Quantidade atual em estoque (opcional)
+  estoque_minimo?: number // Alerta de estoque baixo (opcional, ex: 10)
 }
 
 export interface Caixa {
