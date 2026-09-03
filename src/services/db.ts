@@ -402,8 +402,9 @@ export class LocalDatabaseService {
             }
           })
         }
-      } else if (prod.emite_ficha_individual) {
-        // 1 ficha para CADA unidade
+      } else if (prod.emite_ficha_individual !== false) {
+        // COMPORTAMENTO PADRÃO E OBRIGATÓRIO: INDIVIDUAL
+        // 1 ficha própria e sequencial para CADA unidade do produto
         for (let i = 0; i < cartItem.quantidade; i++) {
           const { codigoValidacao, hashCompleto } = generateSecurityHash(
             seqFicha,
@@ -432,7 +433,8 @@ export class LocalDatabaseService {
           seqFicha++
         }
       } else {
-        // Ficha agrupada do item
+        // CUPOM ÚNICO (quando o produto tem flag emite_ficha_individual: false)
+        // Não gera 1 ficha por unidade, emite 1 cupom único para o item de linha
         const { codigoValidacao, hashCompleto } = generateSecurityHash(
           seqFicha,
           prod.id,
@@ -444,7 +446,7 @@ export class LocalDatabaseService {
           venda_id: vendaId,
           sequencial_venda: seqVenda,
           produto_id: prod.id,
-          produto_nome: `${cartItem.quantidade}x ${prod.nome}`,
+          produto_nome: `${cartItem.quantidade}x ${prod.nome} [Cupom Único]`,
           categoria_nome: catMap.get(prod.categoria_id) || 'Geral',
           preco: cartItem.quantidade * cartItem.preco_unitario,
           codigo_validacao: codigoValidacao,

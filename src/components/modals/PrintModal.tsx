@@ -52,26 +52,45 @@ export const PrintModal: React.FC = () => {
               </div>
               <div>
                 <DialogTitle className="text-lg font-bold">
-                  Emissão de Fichas ({activeFichas.length} un)
+                  Emissão de Fichas ({activeFichas.length}{' '}
+                  {activeFichas.length === 1 ? 'ficha' : 'fichas'})
                 </DialogTitle>
                 <p className="text-xs text-muted-foreground">
-                  Bobina {config.largura_bobina} • Modo{' '}
-                  {config.modo_impressao_padrao === 'individual'
-                    ? 'Individual (1 por item)'
-                    : 'Agrupado'}
+                  Bobina {config.largura_bobina} • Emissão Individual (1 ficha por unidade)
                 </p>
               </div>
             </div>
           </div>
         </DialogHeader>
 
+        {/* BARRA DE INFORMAÇÕES DE LOTE (quando houver múltiplas fichas) */}
+        {activeFichas.length > 1 && (
+          <div className="px-4 py-2 bg-primary/10 border-b border-primary/20 text-xs flex items-center justify-between font-medium">
+            <span className="text-primary font-bold">
+              Lote de {activeFichas.length} fichas individuais sequenciais
+            </span>
+            <span className="text-muted-foreground text-[11px]">
+              Seq #{String(activeFichas[0]?.sequencial || 1).padStart(4, '0')} até #
+              {String(
+                activeFichas[activeFichas.length - 1]?.sequencial || activeFichas.length,
+              ).padStart(4, '0')}
+            </span>
+          </div>
+        )}
+
         {/* ÁREA DE ROLAGEM COM PRÉ-VISUALIZAÇÃO DAS FICHAS */}
         <div className="flex-1 overflow-y-auto p-4 bg-slate-200 dark:bg-slate-950 flex flex-col items-center">
-          <div id="printable-thermal-area" className="flex flex-col items-center space-y-4 py-2">
+          <div
+            id="printable-thermal-area"
+            className="flex flex-col items-center space-y-4 py-2 w-full"
+          >
             {activeFichas.map((ficha, idx) => (
-              <div key={ficha.id || idx} className="relative group">
-                <div className="absolute -left-8 top-4 text-[10px] font-bold text-slate-500 hidden sm:block">
-                  #{idx + 1}
+              <div key={ficha.id || idx} className="relative group flex flex-col items-center">
+                <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1 flex items-center gap-1.5">
+                  <span className="px-1.5 py-0.5 rounded bg-slate-300 dark:bg-slate-800 font-mono text-[10px]">
+                    Ficha {idx + 1} de {activeFichas.length}
+                  </span>
+                  <span>— {ficha.produto_nome}</span>
                 </div>
                 <ThermalFichaTicket
                   ficha={ficha}

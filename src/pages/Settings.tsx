@@ -264,10 +264,10 @@ export default function Settings() {
               Configuração de Impressora Térmica
             </h3>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
-                  Largura da Bobina
+                  Largura da Bobina Térmica
                 </Label>
                 <select
                   value={formData.largura_bobina}
@@ -281,23 +281,14 @@ export default function Settings() {
                 </select>
               </div>
 
-              <div>
-                <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
-                  Modo de Emissão Padrão
-                </Label>
-                <select
-                  value={formData.modo_impressao_padrao}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      modo_impressao_padrao: e.target.value as 'individual' | 'agrupado',
-                    })
-                  }
-                  className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm font-bold"
-                >
-                  <option value="individual">Individual (1 Ficha p/ Item)</option>
-                  <option value="agrupado">Agrupado (Cupom único)</option>
-                </select>
+              <div className="p-3 rounded-xl border border-border bg-primary/5 flex flex-col justify-center">
+                <div className="flex items-center gap-1.5 font-bold text-xs text-primary">
+                  <span>Modo de Emissão: Sempre Individual</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+                  Cada unidade de cada item gera 1 ficha própria com QR code e código anti-fraude
+                  únicos.
+                </p>
               </div>
             </div>
 

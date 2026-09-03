@@ -438,7 +438,12 @@ export function triggerBrowserPrint(elementId: string): void {
           }
           .thermal-ticket {
             page-break-inside: avoid;
-            margin-bottom: 12px;
+            break-inside: avoid;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+          }
+          .thermal-ticket:last-child {
+            margin-bottom: 0;
           }
           * {
             box-sizing: border-box;

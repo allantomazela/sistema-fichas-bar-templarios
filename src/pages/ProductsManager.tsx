@@ -528,15 +528,15 @@ export default function ProductsManager() {
                         <td className="p-3">
                           {prod.is_combo ? (
                             <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
-                              Desmembra em fichas separadas
+                              Desmembra em fichas individuais
                             </span>
-                          ) : prod.emite_ficha_individual ? (
+                          ) : prod.emite_ficha_individual !== false ? (
                             <span className="text-blue-600 dark:text-blue-400 font-semibold text-[11px]">
                               1 Ficha por unidade
                             </span>
                           ) : (
-                            <span className="text-muted-foreground font-semibold text-[11px]">
-                              Ficha agrupada
+                            <span className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">
+                              Cupom único (sem ficha individual)
                             </span>
                           )}
                         </td>
@@ -856,9 +856,11 @@ export default function ProductsManager() {
             <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-xs">Emite Ficha Individual</div>
+                  <div className="font-bold text-xs">Emissão de Fichas Térmicas</div>
                   <div className="text-[11px] text-muted-foreground">
-                    Se ativado, ao vender 3 unidades serão impressas 3 fichas separadas.
+                    {prodForm.emite_ficha_individual
+                      ? 'Emite 1 ficha térmica individual para cada unidade (padrão obrigatório do PDV).'
+                      : 'Cupom único: não emite ficha individual (gera comprovante único por item).'}
                   </div>
                 </div>
                 <Switch
@@ -876,7 +878,7 @@ export default function ProductsManager() {
                     É um Combo / Pacote com Desmembramento
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    Gera múltiplas fichas de produtos diferentes na finalização.
+                    Gera fichas individuais para cada unidade dos itens componentes na finalização.
                   </div>
                 </div>
                 <Switch

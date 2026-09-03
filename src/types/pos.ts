@@ -123,7 +123,7 @@ export interface Configuracoes {
   logomarca_base64?: string // Logomarca do evento em base64
   largura_bobina: LarguraBobina
   corte_automatico: boolean
-  modo_impressao_padrao: 'individual' | 'agrupado' // individual = 1 ficha por item
+  modo_impressao_padrao?: 'individual' // Sempre individual: 1 ficha térmica própria por unidade
   senha_admin: string // Padrão "1234" ou configurável
   taxa_servico_habilitada: boolean
   auto_imprimir_ao_finalizar: boolean
