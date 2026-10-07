@@ -56,7 +56,6 @@ export default function Reports() {
 
     // Fichas estatísticas
     const totalFichasEmitidas = fichas.filter((f) => f.status !== 'cancelada').length
-    const totalFichasBaixadas = fichas.filter((f) => f.status === 'utilizada').length
 
     return {
       totalVendasCount: validVendas.length,
@@ -68,7 +67,6 @@ export default function Reports() {
       totalCredito,
       totalCortesia,
       totalFichasEmitidas,
-      totalFichasBaixadas,
     }
   }, [vendas, fichas])
 
@@ -237,15 +235,15 @@ export default function Reports() {
 
         <div className="p-4 rounded-2xl border border-border bg-card shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground mb-1">
-            <span className="text-xs font-bold uppercase">Fichas de Consumo</span>
+            <span className="text-xs font-bold uppercase">Fichas Emitidas</span>
             <Layers className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="text-2xl font-black font-mono text-indigo-600 dark:text-indigo-400">
-            {stats.totalFichasBaixadas} / {stats.totalFichasEmitidas}
+            {stats.totalFichasEmitidas}
           </div>
           <div className="text-[11px] text-muted-foreground mt-1">
-            {stats.totalFichasEmitidas > 0
-              ? `${Math.round((stats.totalFichasBaixadas / stats.totalFichasEmitidas) * 100)}% fichas entregues`
+            {stats.totalItensVendidos > 0
+              ? `${stats.totalItensVendidos} item(ns) vendidos`
               : 'Nenhuma ficha'}
           </div>
         </div>

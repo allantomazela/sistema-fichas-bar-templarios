@@ -3,15 +3,17 @@ export type FormaPagamento = 'dinheiro' | 'pix' | 'debito' | 'credito' | 'cortes
 export type StatusCaixa = 'aberto' | 'fechado'
 export type TipoMovimentacaoCaixa = 'sangria' | 'suprimento'
 export type StatusVenda = 'concluida' | 'cancelada'
-export type StatusFicha = 'emitida' | 'utilizada' | 'cancelada'
+export type StatusFicha = 'emitida' | 'cancelada'
 export type LarguraBobina = '58mm' | '80mm'
 
 export interface Categoria {
   id: string
   nome: string
-  cor: string // Hex color code for UI cards
-  icone?: string
-  ordem: number
+  cor: string // Hex — cor dos filtros no PDV
+  icone?: string // Nome do ícone Lucide (ex: Beer, Wine)
+  ordem: number // Ordem de exibição no PDV (menor = primeiro)
+  ativo?: boolean // false = oculta no PDV sem excluir (padrão true)
+  descricao?: string // Texto auxiliar no cadastro
 }
 
 export interface ComboItem {
@@ -30,8 +32,8 @@ export interface Produto {
   descricao?: string
   is_combo?: boolean
   itens_combo?: ComboItem[] // Para desmembrar combos em fichas individuais
-  imagem_base64?: string // Imagem do produto em base64 (offline-first)
-  imprimir_imagem_ficha?: boolean // Se viável, imprimir imagem do produto na ficha
+  imagem_base64?: string // Foto só na tela de venda / cadastro (nunca na ficha)
+  imprimir_imagem_ficha?: boolean // Legado — sempre false; ficha imprime apenas o nome
   controla_estoque?: boolean // Se true, o produto tem limite e baixa de estoque
   estoque_atual?: number // Quantidade atual em estoque (opcional)
   estoque_minimo?: number // Alerta de estoque baixo (opcional, ex: 10)
@@ -109,9 +111,9 @@ export interface Ficha {
   operador: string
   caixa_id: string
   status: StatusFicha
-  data_utilizacao?: string
-  operador_validacao?: string
+  /** @deprecated Não usado — fichas não carregam foto do produto */
   produto_imagem_base64?: string
+  /** @deprecated Sempre false — ficha imprime só o nome */
   imprimir_imagem_ficha?: boolean
 }
 
@@ -123,6 +125,13 @@ export interface Configuracoes {
   logomarca_base64?: string // Logomarca do evento em base64
   largura_bobina: LarguraBobina
   corte_automatico: boolean
+  /** Nome da impressora no Windows/Linux (ex.: Elgin i9(USB)). */
+  impressora_nome?: string
+  /**
+   * escpos = RAW Elgin i9 (recomendado, corta guilhotina).
+   * navegador = diálogo de impressão do WebView (fallback).
+   */
+  modo_impressao?: 'escpos' | 'navegador'
   modo_impressao_padrao?: 'individual' // Sempre individual: 1 ficha térmica própria por unidade
   senha_admin: string // Padrão "1234" ou configurável
   taxa_servico_habilitada: boolean
@@ -143,7 +152,8 @@ export interface Configuracoes {
   ficha_mostrar_data_hora?: boolean // padrão true
   ficha_mostrar_operador?: boolean // padrão true
   ficha_mostrar_rodape?: boolean // padrão true
-  ficha_mostrar_imagem_produto?: boolean // se o produto tiver imagem (padrão false)
+  /** @deprecated Sempre false — foto do produto não sai na ficha */
+  ficha_mostrar_imagem_produto?: boolean
 }
 
 export interface CartItem {

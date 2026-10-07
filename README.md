@@ -1,131 +1,110 @@
-# Projeto Criado com o Skip
+# Sistema de Fichas — Bar Templários
 
-Este projeto foi criado de ponta a ponta com o [Skip](https://goskip.dev).
+PDV **nativo** (Windows e Linux) para emissão de fichas térmicas, controle de caixa e catálogo de produtos. Os dados ficam em **banco SQLite local** no disco da máquina — sem servidor e sem nuvem.
 
-## 🚀 Stack Tecnológica
+Evento padrão: **Show de Prêmios** · Organização: **Templários da Paz**.
 
-- **React 19** - Biblioteca JavaScript para construção de interfaces
-- **Vite** - Build tool extremamente rápida
-- **TypeScript** - Superset tipado do JavaScript
-- **Shadcn UI** - Componentes reutilizáveis e acessíveis
-- **Tailwind CSS** - Framework CSS utility-first
-- **React Router** - Roteamento para aplicações React
-- **React Hook Form** - Gerenciamento de formulários performático
-- **Zod** - Validação de schemas TypeScript-first
-- **Recharts** - Biblioteca de gráficos para React
+## Plataformas
 
-## 📋 Pré-requisitos
+| SO | Empacotamento | Banco local |
+| --- | --- | --- |
+| **Windows** | instalador NSIS / MSI | `%APPDATA%\br.org.templariosdapaz.fichas\` → `templarios_pdv.db` |
+| **Linux** | `.deb` / AppImage | `~/.config/br.org.templariosdapaz.fichas/` → `templarios_pdv.db` |
+
+Guia completo de instaladores (Windows **e** Linux separados): **[docs/DISTRIBUICAO.md](docs/DISTRIBUICAO.md)**.
+
+## Stack
+
+- React 19 + TypeScript + Vite
+- Tailwind CSS + Shadcn UI
+- **Tauri 2** (Windows / Linux)
+- **SQLite** (`@tauri-apps/plugin-sql`) — arquivo `templarios_pdv.db`
+
+## Pré-requisitos
+
+### Frontend (sempre)
 
 - Node.js 18+
-- npm
+- pnpm 10+
 
-## 🔧 Instalação
+### App nativo (Tauri)
 
-```bash
-npm install
-```
-
-## 💻 Scripts Disponíveis
-
-### Desenvolvimento
+- [Rust](https://www.rust-lang.org/tools/install) (stable) + Cargo
+- **Windows:** [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) (já vem no Windows 10/11 recente) + ferramentas de build MSVC (Visual Studio Build Tools)
+- **Linux:** dependências do WebKitGTK / Tauri, por exemplo no Debian/Ubuntu:
 
 ```bash
-# Iniciar servidor de desenvolvimento
-npm start
-# ou
-npm run dev
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libfuse2
 ```
 
-Abre a aplicação em modo de desenvolvimento em [http://localhost:5173](http://localhost:5173).
+Documentação oficial: [Tauri — Prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-### Build
+## Instalação
 
 ```bash
-# Build para produção
-npm run build
-
-# Build para desenvolvimento
-npm run build:dev
+pnpm install
 ```
 
-Gera os arquivos otimizados para produção na pasta `dist/`.
-
-### Preview
+### Modo browser (rápido)
 
 ```bash
-# Visualizar build de produção localmente
-npm run preview
+pnpm dev
 ```
 
-Permite visualizar a build de produção localmente antes do deploy.
+Abre em [http://127.0.0.1:5173](http://127.0.0.1:5173). Dados em `localStorage`.
 
-### Linting e Formatação
+### Modo nativo (produção / caixa do evento)
 
 ```bash
-# Executar linter
-npm run lint
-
-# Executar linter e corrigir problemas automaticamente
-npm run lint:fix
-
-# Formatar código com Oxfmt
-npm run format
+pnpm tauri:dev
 ```
 
-## 📁 Estrutura do Projeto
+Sobe o Vite + janela nativa com SQLite.
 
-```
-.
-├── src/              # Código fonte da aplicação
-├── public/           # Arquivos estáticos
-├── dist/             # Build de produção (gerado)
-├── node_modules/     # Dependências (gerado)
-└── package.json      # Configurações e dependências do projeto
-```
+### Build de instaladores (separados)
 
-## 🎨 Componentes UI
+```powershell
+# Windows → dist-installers/windows/
+pnpm tauri:build:windows
 
-Este template inclui uma biblioteca completa de componentes Shadcn UI baseados em Radix UI:
-
-- Accordion
-- Alert Dialog
-- Avatar
-- Button
-- Checkbox
-- Dialog
-- Dropdown Menu
-- Form
-- Input
-- Label
-- Select
-- Switch
-- Tabs
-- Toast
-- Tooltip
-- E muito mais...
-
-## 📝 Ferramentas de Qualidade de Código
-
-- **TypeScript**: Tipagem estática
-- **Oxlint**: Linter extremamente rápido
-- **Oxfmt**: Formatação automática de código
-
-## 🔄 Workflow de Desenvolvimento
-
-1. Instale as dependências: `npm install`
-2. Inicie o servidor de desenvolvimento: `npm start`
-3. Faça suas alterações
-4. Verifique o código: `npm run lint`
-5. Formate o código: `npm run format`
-6. Crie a build: `npm run build`
-7. Visualize a build: `npm run preview`
-
-## 📦 Build e Deploy
-
-Para criar uma build otimizada para produção:
-
-```bash
-npm run build
+# Linux via Docker → dist-installers/linux/
+pnpm tauri:build:linux
 ```
 
-Os arquivos otimizados serão gerados na pasta `dist/` e estarão prontos para deploy.
+## Scripts
+
+| Comando | Descrição |
+| --- | --- |
+| `pnpm dev` | UI no navegador (localStorage) |
+| `pnpm tauri:dev` | App nativo + hot reload + SQLite |
+| `pnpm tauri:build:windows` | Instaladores Windows (NSIS + MSI) |
+| `pnpm tauri:build:linux` | Pacotes Linux via Docker (.deb + AppImage) |
+| `pnpm tauri:build:linux:native` | Pacotes Linux em máquina Linux |
+| `pnpm build` | Só o frontend (Vite) |
+| `pnpm lint` | Oxlint |
+| `pnpm format` | Oxfmt |
+
+## Banco de dados local
+
+- Engine: **SQLite**
+- Arquivo: `templarios_pdv.db`
+- Tabela `kv_store` (chave/valor JSON) para config, catálogo, caixas, vendas e fichas
+- Na primeira abertura nativa, se existir histórico no `localStorage` do WebView, os dados são **migrados** automaticamente para o SQLite
+- Backup/restauração JSON continua disponível em Configurações
+
+## Rotas
+
+- `/` — PDV e emissão de fichas
+- `/caixa` — Abertura, fechamento, sangria e suprimento
+- `/produtos` — Catálogo de produtos e categorias
+- `/relatorios` — Relatórios do evento
+- `/dashboard` — Visão geral
+- `/configuracoes` — Configurações do evento e da impressão
+
+Senha administrativa padrão: `1234` (alterável em Configurações). Após alterar, a senha antiga deixa de funcionar.
+
+## Impressão térmica
+
+Após finalizar a venda, as fichas são enviadas à impressora (1 ficha = 1 página, para picote/corte por unidade). Configure o driver da térmica (80 mm) com opção de cortar a cada página quando disponível.

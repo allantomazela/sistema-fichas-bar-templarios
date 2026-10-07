@@ -60,7 +60,7 @@ function generateMatrix(text: string, size = 21): boolean[][] {
   let bitIndex = 0
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
-      // Skip finder zones
+      // Ignorar zonas finder
       const inTopLeft = r < 8 && c < 8
       const inTopRight = r < 8 && c >= size - 8
       const inBottomLeft = r >= size - 8 && c < 8

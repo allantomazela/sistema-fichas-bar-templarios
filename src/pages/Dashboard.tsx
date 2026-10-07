@@ -15,12 +15,9 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   Flame,
-  CheckCircle2,
   Calendar,
-  Sparkles,
   Filter,
   History,
-  Package,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -149,13 +146,13 @@ export default function Dashboard() {
       }
     })
 
-    // Fichas: emitidas vs validadas (baixadas) vs restantes (estoque na mão do cliente)
+    // Fichas emitidas (não canceladas)
     const fichasValidas = filteredFichas.filter((f) => f.status !== 'cancelada')
     const totalFichasEmitidas = fichasValidas.length
-    const totalFichasValidadas = fichasValidas.filter((f) => f.status === 'utilizada').length
-    const fichasRestantes = Math.max(0, totalFichasEmitidas - totalFichasValidadas)
-    const percentualConsumido =
-      totalFichasEmitidas > 0 ? Math.round((totalFichasValidadas / totalFichasEmitidas) * 100) : 0
+    const totalItensVendidos = validVendas.reduce(
+      (acc, v) => acc + v.itens.reduce((sub, it) => sub + it.quantidade, 0),
+      0,
+    )
 
     // Vendas e Faturamento por Hora
     const hourlyMap = new Map<
@@ -212,18 +209,16 @@ export default function Dashboard() {
     // Top produtos por fichas emitidas
     const productStatsMap = new Map<
       string,
-      { nome: string; emitidas: number; validadas: number; faturamento: number }
+      { nome: string; emitidas: number; faturamento: number }
     >()
 
     fichasValidas.forEach((f) => {
       const cur = productStatsMap.get(f.produto_id) || {
         nome: f.produto_nome.replace(' (Combo)', ''),
         emitidas: 0,
-        validadas: 0,
         faturamento: 0,
       }
       cur.emitidas += 1
-      if (f.status === 'utilizada') cur.validadas += 1
       cur.faturamento += f.preco
       productStatsMap.set(f.produto_id, cur)
     })
@@ -254,6 +249,7 @@ export default function Dashboard() {
       totalVendasCount,
       valorTotalVendas,
       ticketMedio,
+      totalItensVendidos,
       dinheiro,
       pix,
       debito,
@@ -265,9 +261,6 @@ export default function Dashboard() {
       countCredito,
       countCortesia,
       totalFichasEmitidas,
-      totalFichasValidadas,
-      fichasRestantes,
-      percentualConsumido,
       hourlyData,
       picosDeMovimento,
       paymentData,
@@ -294,8 +287,8 @@ export default function Dashboard() {
                 Dashboard & Resumo do Evento
               </h2>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Visão executiva em tempo real: vendas, fluxo por hora, picos de movimento e controle
-                de estoque de fichas.
+                Visão executiva em tempo real: vendas, fluxo por hora, picos de movimento e fichas
+                emitidas.
               </p>
             </div>
           </div>
@@ -425,43 +418,38 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* FICHAS VALIDADAS / BAIXADAS */}
+        {/* PEDIDOS */}
         <div className="p-5 rounded-2xl border border-border bg-card shadow-xs relative overflow-hidden">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-bold uppercase tracking-wider">
-              Fichas Baixadas (Consumo)
-            </span>
+            <span className="text-xs font-bold uppercase tracking-wider">Pedidos</span>
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
-          </div>
-          <div className="mt-2">
-            <div className="text-3xl font-black font-mono text-purple-600 dark:text-purple-400">
-              {metrics.totalFichasValidadas}
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-              <span className="font-bold text-foreground">{metrics.percentualConsumido}%</span>
-              <span>do total entregue no balcão</span>
-            </div>
-          </div>
-        </div>
-
-        {/* ESTOQUE RESTANTE DE FICHAS */}
-        <div className="p-5 rounded-2xl border border-border bg-card shadow-xs relative overflow-hidden">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-bold uppercase tracking-wider">
-              Fichas Restantes (Em Aberto)
-            </span>
-            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
               <Layers className="w-5 h-5" />
             </div>
           </div>
           <div className="mt-2">
-            <div className="text-3xl font-black font-mono text-amber-600 dark:text-amber-400">
-              {metrics.fichasRestantes}
+            <div className="text-3xl font-black font-mono text-purple-600 dark:text-purple-400">
+              {metrics.totalVendasCount}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
-              Fichas pagas pendentes de retirada na entrega
+              {metrics.totalItensVendidos} item(ns) vendidos no período
+            </div>
+          </div>
+        </div>
+
+        {/* TICKET MÉDIO */}
+        <div className="p-5 rounded-2xl border border-border bg-card shadow-xs relative overflow-hidden">
+          <div className="flex items-center justify-between text-muted-foreground">
+            <span className="text-xs font-bold uppercase tracking-wider">Ticket Médio</span>
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-2">
+            <div className="text-3xl font-black font-mono text-amber-600 dark:text-amber-400">
+              {formatCurrency(metrics.ticketMedio)}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Valor médio por pedido concluído
             </div>
           </div>
         </div>
@@ -859,48 +847,27 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* CONTROLE DE FICHAS: EMISSÃO VS BAIXA VS RESTANTE */}
+        {/* TOP FICHAS POR PRODUTO */}
         <div className="lg:col-span-6 p-5 rounded-2xl border border-border bg-card shadow-xs space-y-4">
           <div className="border-b border-border pb-3">
             <h3 className="font-bold text-base text-foreground flex items-center gap-2">
               <Ticket className="w-5 h-5 text-primary" />
-              Estoque de Fichas: Emitidas vs Baixadas vs Restantes
+              Top Produtos por Fichas Emitidas
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Controle de consumo em tempo real para evitar desperdício e monitorar a produção da
-              cozinha/bar.
+              Ranking dos itens com mais fichas geradas no período selecionado.
             </p>
           </div>
 
-          {/* BARRA DE PROGRESSO DO CONSUMO */}
-          <div className="p-4 rounded-xl bg-muted/20 border border-border space-y-2">
-            <div className="flex items-center justify-between text-xs font-bold">
-              <span>Progresso de Entrega Geral</span>
-              <span className="font-mono text-primary font-black">
-                {metrics.totalFichasValidadas} de {metrics.totalFichasEmitidas} fichas (
-                {metrics.percentualConsumido}%)
-              </span>
-            </div>
-            <Progress value={metrics.percentualConsumido} className="h-3" />
-            <div className="flex justify-between text-[11px] text-muted-foreground pt-1">
-              <span>Baixadas (Entregues): {metrics.totalFichasValidadas}</span>
-              <span>Restantes na mão do público: {metrics.fichasRestantes}</span>
-            </div>
-          </div>
-
-          {/* LISTA DE PRODUTOS MAIS EMITIDOS COM STATUS DE BAIXA */}
           <div className="space-y-2.5">
-            <span className="text-xs font-bold uppercase text-muted-foreground block">
-              Consumo por Produto Destaque
-            </span>
             {metrics.topFichasPorProduto.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-6">
                 Nenhuma ficha emitida ainda.
               </p>
             ) : (
               metrics.topFichasPorProduto.map((item, idx) => {
-                const perc =
-                  item.emitidas > 0 ? Math.round((item.validadas / item.emitidas) * 100) : 0
+                const maxEmitidas = metrics.topFichasPorProduto[0]?.emitidas || 1
+                const perc = Math.round((item.emitidas / maxEmitidas) * 100)
                 return (
                   <div
                     key={idx}
@@ -909,8 +876,8 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-bold text-foreground truncate">{item.nome}</span>
                       <span className="font-mono text-muted-foreground">
-                        <strong className="text-foreground">{item.validadas}</strong> /{' '}
-                        {item.emitidas} entregues
+                        <strong className="text-foreground">{item.emitidas}</strong> fichas ·{' '}
+                        {formatCurrency(item.faturamento)}
                       </span>
                     </div>
                     <Progress value={perc} className="h-1.5" />

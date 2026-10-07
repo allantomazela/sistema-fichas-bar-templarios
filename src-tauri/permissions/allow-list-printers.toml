@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-list-printers"
+description = "Permite listar impressoras do sistema (Elgin i9)."
+commands.allow = ["list_printers"]

@@ -10,7 +10,11 @@ import {
   FormaPagamento,
   MovimentacaoCaixa,
 } from '@/types/pos'
-import { LocalDatabaseService } from '@/services/db'
+import { initPersistentStorage, getStorageBackend, flushStorageWrites } from '@/services/storage'
+import { pickBackupFileContent, saveBackupFile } from '@/services/backupFiles'
+import { INITIAL_CONFIG } from '@/services/mockData'
+import { printFichasDireto } from '@/components/common/ThermalTickets'
+import { LocalDatabaseService, StorageCorruptionError } from '@/services/db'
 import { toast } from 'sonner'
 
 interface PosContextType {
@@ -25,8 +29,9 @@ interface PosContextType {
   produtos: Produto[]
   refreshCatalog: () => void
   addCategoria: (cat: Omit<Categoria, 'id'>) => Categoria
-  updateCategoria: (id: string, updates: Partial<Categoria>) => void
-  deleteCategoria: (id: string) => void
+  updateCategoria: (id: string, updates: Partial<Categoria>, opts?: { silent?: boolean }) => void
+  deleteCategoria: (id: string, moveProdutosParaId?: string) => void
+  moveCategoria: (id: string, direction: 'up' | 'down') => void
   addProduto: (prod: Omit<Produto, 'id'>) => Produto
   updateProduto: (id: string, updates: Partial<Produto>) => void
   deleteProduto: (id: string) => void
@@ -65,12 +70,12 @@ interface PosContextType {
   setLastSaleResult: (val: { venda: Venda; fichas: Ficha[] } | null) => void
   previewFichas: Ficha[] | null
   setPreviewFichas: (fichas: Ficha[] | null) => void
-  validarFicha: (codigo: string) => { sucesso: boolean; mensagem: string; ficha?: Ficha }
 
   // Administração e Manutenção
   zerarVendas: (fundoTroco: number, operador: string) => void
   importarBackup: (jsonContent: string) => boolean
-  exportarBackup: () => void
+  exportarBackup: () => Promise<void>
+  abrirSeletorBackup: () => Promise<void>
 
   // Modal State Helpers (Atalhos)
   isPaymentModalOpen: boolean
@@ -83,30 +88,21 @@ const PosContext = createContext<PosContextType | undefined>(undefined)
 
 export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Configurações
-  const [config, setConfigState] = useState<Configuracoes>(() => LocalDatabaseService.getConfig())
-  const [tema, setTemaState] = useState<'light' | 'dark'>(() => {
-    const saved = LocalDatabaseService.getConfig().tema
-    return saved || 'light'
-  })
+  const [config, setConfigState] = useState<Configuracoes>(INITIAL_CONFIG)
+  const [tema, setTemaState] = useState<'light' | 'dark'>('light')
 
   // Catálogo
-  const [categorias, setCategorias] = useState<Categoria[]>(() =>
-    LocalDatabaseService.getCategorias(),
-  )
-  const [produtos, setProdutos] = useState<Produto[]>(() => LocalDatabaseService.getProdutos())
+  const [categorias, setCategorias] = useState<Categoria[]>([])
+  const [produtos, setProdutos] = useState<Produto[]>([])
 
   // Caixa
-  const [caixas, setCaixas] = useState<Caixa[]>(() => LocalDatabaseService.getCaixas())
-  const [caixaAtivo, setCaixaAtivo] = useState<Caixa | null>(() =>
-    LocalDatabaseService.getCaixaAtivo(),
-  )
-  const [movimentacoes, setMovimentacoes] = useState<MovimentacaoCaixa[]>(() =>
-    LocalDatabaseService.getMovimentacoes(),
-  )
+  const [caixas, setCaixas] = useState<Caixa[]>([])
+  const [caixaAtivo, setCaixaAtivo] = useState<Caixa | null>(null)
+  const [movimentacoes, setMovimentacoes] = useState<MovimentacaoCaixa[]>([])
 
   // Vendas e Fichas
-  const [vendas, setVendas] = useState<Venda[]>(() => LocalDatabaseService.getVendas())
-  const [fichas, setFichas] = useState<Ficha[]>(() => LocalDatabaseService.getFichas())
+  const [vendas, setVendas] = useState<Venda[]>([])
+  const [fichas, setFichas] = useState<Ficha[]>([])
 
   // Carrinho
   const [carrinho, setCarrinho] = useState<CartItem[]>([])
@@ -119,15 +115,98 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
   const [isQuickSearchOpen, setIsQuickSearchOpen] = useState(false)
 
+  const [storageReady, setStorageReady] = useState(false)
+  const [storageFatalError, setStorageFatalError] = useState<string | null>(null)
+  const [vendaEmAndamento, setVendaEmAndamento] = useState(false)
+
+  // Bootstrap: SQLite (nativo) ou localStorage (browser)
+  useEffect(() => {
+    let cancelled = false
+
+    async function boot() {
+      try {
+        const { backend } = await initPersistentStorage()
+        if (cancelled) return
+
+        LocalDatabaseService.initDatabase()
+        const loadedConfig = LocalDatabaseService.getConfig()
+        setConfigState(loadedConfig)
+        setTemaState(loadedConfig.tema || 'light')
+        setCategorias(LocalDatabaseService.getCategorias())
+        setProdutos(LocalDatabaseService.getProdutos())
+        setCaixas(LocalDatabaseService.getCaixas())
+        setCaixaAtivo(LocalDatabaseService.getCaixaAtivo())
+        const ativoBoot = LocalDatabaseService.getCaixaAtivo()
+        setMovimentacoes(
+          ativoBoot ? LocalDatabaseService.getMovimentacoes(ativoBoot.id) : [],
+        )
+        setVendas(LocalDatabaseService.getVendas())
+        setFichas(LocalDatabaseService.getFichas())
+        setStorageFatalError(null)
+        setStorageReady(true)
+
+        if (import.meta.env.DEV) {
+          console.info(`[PDV] Persistência: ${backend} (${getStorageBackend()})`)
+        }
+      } catch (err) {
+        console.error('Falha ao inicializar armazenamento local', err)
+        const message =
+          err instanceof StorageCorruptionError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'Não foi possível abrir o banco de dados local.'
+        if (!cancelled) {
+          setStorageFatalError(message)
+          toast.error(message)
+          // Não libera o PDV em modo “só memória” — evita turno fantasma
+          setStorageReady(true)
+        }
+      }
+    }
+
+    void boot()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   // Sincronizar tema no DOM
   useEffect(() => {
+    if (!storageReady || storageFatalError) return
     const root = document.documentElement
     if (tema === 'dark') {
       root.classList.add('dark')
     } else {
       root.classList.remove('dark')
     }
-  }, [tema])
+  }, [tema, storageReady, storageFatalError])
+
+  if (!storageReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="space-y-2 text-center">
+          <p className="text-lg font-semibold">Show de Prêmios</p>
+          <p className="text-sm text-muted-foreground">Carregando banco de dados local…</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (storageFatalError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground p-6">
+        <div className="max-w-md space-y-3 text-center border border-destructive/40 rounded-2xl p-6 bg-card">
+          <p className="text-lg font-black text-destructive">Banco local indisponível</p>
+          <p className="text-sm text-muted-foreground">{storageFatalError}</p>
+          <p className="text-xs text-muted-foreground">
+            Feche o aplicativo, reinstale se necessário ou restaure um backup. Não continue vendendo
+            sem persistência.
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const toggleTema = () => {
     const next: 'light' | 'dark' = tema === 'light' ? 'dark' : 'light'
@@ -151,8 +230,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const refreshCaixa = () => {
     setCaixas(LocalDatabaseService.getCaixas())
-    setCaixaAtivo(LocalDatabaseService.getCaixaAtivo())
-    setMovimentacoes(LocalDatabaseService.getMovimentacoes())
+    const ativo = LocalDatabaseService.getCaixaAtivo()
+    setCaixaAtivo(ativo)
+    setMovimentacoes(
+      ativo
+        ? LocalDatabaseService.getMovimentacoes(ativo.id)
+        : [],
+    )
     setVendas(LocalDatabaseService.getVendas())
     setFichas(LocalDatabaseService.getFichas())
   }
@@ -165,16 +249,28 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return nova
   }
 
-  const updateCategoria = (id: string, updates: Partial<Categoria>) => {
+  const updateCategoria = (
+    id: string,
+    updates: Partial<Categoria>,
+    opts?: { silent?: boolean },
+  ) => {
     LocalDatabaseService.updateCategoria(id, updates)
     setCategorias(LocalDatabaseService.getCategorias())
-    toast.success('Categoria atualizada.')
+    if (!opts?.silent) toast.success('Categoria atualizada.')
   }
 
-  const deleteCategoria = (id: string) => {
-    LocalDatabaseService.deleteCategoria(id)
+  const deleteCategoria = (id: string, moveProdutosParaId?: string) => {
+    LocalDatabaseService.deleteCategoria(id, moveProdutosParaId)
     setCategorias(LocalDatabaseService.getCategorias())
+    if (moveProdutosParaId) {
+      setProdutos(LocalDatabaseService.getProdutos())
+    }
     toast.success('Categoria removida.')
+  }
+
+  const moveCategoria = (id: string, direction: 'up' | 'down') => {
+    LocalDatabaseService.moveCategoria(id, direction)
+    setCategorias(LocalDatabaseService.getCategorias())
   }
 
   // CRUD Produtos
@@ -210,6 +306,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const novo = LocalDatabaseService.abrirCaixa(operador, saldoInicial, obs)
     setCaixas(LocalDatabaseService.getCaixas())
     setCaixaAtivo(novo)
+    setMovimentacoes([])
     toast.success(
       `Caixa aberto por ${novo.operador} com saldo inicial de R$ ${saldoInicial.toFixed(2)}`,
     )
@@ -220,6 +317,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const fechado = LocalDatabaseService.fecharCaixa(caixaAtivo.id, valores, obs)
     setCaixas(LocalDatabaseService.getCaixas())
     setCaixaAtivo(null)
+    setMovimentacoes([])
     toast.success('Caixa fechado com sucesso!')
     return fechado
   }
@@ -230,13 +328,13 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return
     }
     LocalDatabaseService.addMovimentacao(caixaAtivo.id, tipo, valor, motivo, caixaAtivo.operador)
-    setMovimentacoes(LocalDatabaseService.getMovimentacoes())
+    setMovimentacoes(LocalDatabaseService.getMovimentacoes(caixaAtivo.id))
     toast.success(
       `${tipo === 'sangria' ? 'Sangria' : 'Suprimento'} de R$ ${valor.toFixed(2)} registrada!`,
     )
   }
 
-  // Validador de estoque para um item/produto antes de adicionar ou alterar carrinho
+  // Checagem de estoque antes de adicionar ou alterar o carrinho
   const checkEstoqueDisponivel = (
     produto: Produto,
     quantidadeDesejadaTotal: number,
@@ -364,6 +462,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Finalização de Venda
   const finalizarVenda = (formaPagamento: FormaPagamento, valorRecebido: number, desconto = 0) => {
+    if (vendaEmAndamento) {
+      toast.error('Aguarde: já existe uma venda sendo finalizada.')
+      return null
+    }
     if (!caixaAtivo) {
       toast.error('É necessário abrir um Caixa antes de realizar vendas!')
       return null
@@ -373,56 +475,76 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return null
     }
 
-    const totalCalculado = Math.max(0, cartTotal - desconto)
-    const troco = formaPagamento === 'dinheiro' ? Math.max(0, valorRecebido - totalCalculado) : 0
+    setVendaEmAndamento(true)
+    try {
+      const totalCalculado = Math.max(0, cartTotal - desconto)
+      const troco = formaPagamento === 'dinheiro' ? Math.max(0, valorRecebido - totalCalculado) : 0
 
-    const result = LocalDatabaseService.finalizarVenda({
-      caixaId: caixaAtivo.id,
-      operador: caixaAtivo.operador,
-      itens: carrinho,
-      formaPagamento,
-      valorRecebido,
-      troco,
-      desconto,
-    })
+      const result = LocalDatabaseService.finalizarVenda({
+        caixaId: caixaAtivo.id,
+        operador: caixaAtivo.operador,
+        itens: carrinho,
+        formaPagamento,
+        valorRecebido,
+        troco,
+        desconto,
+      })
 
-    // Atualizar produtos para refletir a baixa de estoque na UI imediatamente
-    setProdutos(LocalDatabaseService.getProdutos())
-    setVendas(LocalDatabaseService.getVendas())
-    setFichas(LocalDatabaseService.getFichas())
-    setLastSaleResult(result)
-    clearCart()
-    setIsPaymentModalOpen(false)
+      // Atualizar produtos para refletir a baixa de estoque na UI imediatamente
+      setProdutos(LocalDatabaseService.getProdutos())
+      setVendas(LocalDatabaseService.getVendas())
+      setFichas(LocalDatabaseService.getFichas())
+      setLastSaleResult(result)
+      clearCart()
+      setIsPaymentModalOpen(false)
 
-    toast.success(
-      `Venda #${result.venda.sequencial_venda} finalizada! ${result.fichas.length} ficha(s) gerada(s).`,
-    )
+      toast.success(
+        `Venda #${result.venda.sequencial_venda} finalizada! ${result.fichas.length} ficha(s) gerada(s).`,
+      )
 
-    return result
+      void flushStorageWrites().catch((err) => {
+        console.error(err)
+        toast.error('Venda registrada, mas houve falha ao gravar no disco. Não desligue o PC e tente exportar backup.')
+      })
+
+      // Impressão direta (sem painel de pré-visualização)
+      if (config.auto_imprimir_ao_finalizar !== false && result.fichas.length > 0) {
+        window.setTimeout(() => {
+          void printFichasDireto(result.fichas, config)
+        }, 120)
+      }
+
+      return result
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Não foi possível finalizar a venda.'
+      toast.error(message)
+      return null
+    } finally {
+      setVendaEmAndamento(false)
+    }
   }
 
   const cancelarVenda = (vendaId: string, motivo: string) => {
-    const ok = LocalDatabaseService.cancelarVenda(vendaId, motivo)
-    if (ok) {
-      setVendas(LocalDatabaseService.getVendas())
-      setFichas(LocalDatabaseService.getFichas())
-      toast.success(`Venda cancelada com sucesso.`)
-    } else {
-      toast.error('Não foi possível cancelar a venda.')
+    try {
+      const ok = LocalDatabaseService.cancelarVenda(vendaId, motivo)
+      if (ok) {
+        setVendas(LocalDatabaseService.getVendas())
+        setFichas(LocalDatabaseService.getFichas())
+        setProdutos(LocalDatabaseService.getProdutos())
+        toast.success('Venda cancelada e estoque reposto.')
+        void flushStorageWrites().catch((err) => {
+          console.error(err)
+          toast.error('Cancelamento feito, mas falhou gravar no disco. Exporte um backup.')
+        })
+      } else {
+        toast.error('Não foi possível cancelar a venda.')
+      }
+      return ok
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao cancelar a venda.')
+      return false
     }
-    return ok
-  }
-
-  const validarFicha = (codigo: string) => {
-    const operador = caixaAtivo ? caixaAtivo.operador : 'Balcão'
-    const result = LocalDatabaseService.validarFicha(codigo, operador)
-    if (result.sucesso) {
-      setFichas(LocalDatabaseService.getFichas())
-      toast.success(result.mensagem)
-    } else {
-      toast.error(result.mensagem)
-    }
-    return result
   }
 
   const zerarVendas = (fundoTroco: number, operador: string) => {
@@ -434,17 +556,27 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     toast.success('Base de vendas reiniciada para um novo evento!')
   }
 
-  const exportarBackup = () => {
-    const backup = LocalDatabaseService.exportBackup()
-    const jsonStr = JSON.stringify(backup, null, 2)
-    const blob = new Blob([jsonStr], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `backup_pdv_fichas_${new Date().toISOString().slice(0, 10)}.json`
-    link.click()
-    URL.revokeObjectURL(url)
-    toast.success('Backup exportado com sucesso!')
+  const exportarBackup = async () => {
+    try {
+      const backup = LocalDatabaseService.exportBackup()
+      const jsonStr = JSON.stringify(backup, null, 2)
+      const ok = await saveBackupFile(jsonStr)
+      if (ok) toast.success('Backup exportado com sucesso!')
+    } catch (err) {
+      console.error(err)
+      toast.error('Falha ao exportar o backup.')
+    }
+  }
+
+  const abrirSeletorBackup = async () => {
+    try {
+      const content = await pickBackupFileContent()
+      if (content == null) return
+      importarBackup(content)
+    } catch (err) {
+      console.error(err)
+      toast.error('Falha ao abrir o arquivo de backup.')
+    }
   }
 
   const importarBackup = (jsonContent: string): boolean => {
@@ -481,6 +613,7 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategoria,
         updateCategoria,
         deleteCategoria,
+        moveCategoria,
         addProduto,
         updateProduto,
         deleteProduto,
@@ -507,10 +640,10 @@ export const PosProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setLastSaleResult,
         previewFichas,
         setPreviewFichas,
-        validarFicha,
         zerarVendas,
         importarBackup,
         exportarBackup,
+        abrirSeletorBackup,
         isPaymentModalOpen,
         setIsPaymentModalOpen,
         isQuickSearchOpen,

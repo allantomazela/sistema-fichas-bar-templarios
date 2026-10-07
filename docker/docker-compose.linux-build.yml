@@ -1,0 +1,23 @@
+# Build Linux separado do Windows — rode a partir da raiz do projeto:
+#   docker compose -f docker/docker-compose.linux-build.yml run --rm linux-build
+services:
+  linux-build:
+    build:
+      context: ..
+      dockerfile: docker/linux-build.Dockerfile
+    volumes:
+      - ..:/app
+      - linux-cargo-registry:/usr/local/cargo/registry
+      - linux-cargo-git:/usr/local/cargo/git
+      - linux-target:/app/src-tauri/target
+      - linux-node-modules:/app/node_modules
+    working_dir: /app
+    environment:
+      - CI=true
+      - NO_STRIP=true
+
+volumes:
+  linux-cargo-registry:
+  linux-cargo-git:
+  linux-target:
+  linux-node-modules:

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { usePos } from '@/context/PosContext'
-import { Produto, Categoria, ComboItem } from '@/types/pos'
+import { Produto, ComboItem } from '@/types/pos'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -15,6 +15,19 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { ProductImagePicker } from '@/components/products/ProductImagePicker'
+import { CategoriesPanel } from '@/components/products/CategoriesPanel'
+import { getCategoryIcon } from '@/lib/categoryIcons'
+import {
   Layers,
   Plus,
   Edit2,
@@ -22,13 +35,13 @@ import {
   Sparkles,
   Package,
   Search,
-  Tag,
   Palette,
   CheckCircle2,
   XCircle,
   Image as ImageIcon,
-  X,
-  Upload,
+  LayoutGrid,
+  List,
+  Copy,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -36,9 +49,6 @@ export default function ProductsManager() {
   const {
     categorias,
     produtos,
-    addCategoria,
-    updateCategoria,
-    deleteCategoria,
     addProduto,
     updateProduto,
     deleteProduto,
@@ -48,11 +58,13 @@ export default function ProductsManager() {
   const [activeTab, setActiveTab] = useState<'produtos' | 'categorias'>('produtos')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCatFilter, setSelectedCatFilter] = useState('todas')
+  const [viewMode, setViewMode] = useState<'lista' | 'grade'>('lista')
+  const [catCreateSignal, setCatCreateSignal] = useState(0)
 
   // Modal Produto
   const [isProdModalOpen, setIsProdModalOpen] = useState(false)
   const [editingProdId, setEditingProdId] = useState<string | null>(null)
-  const [prodImageInputRef, setProdImageInputRef] = useState<HTMLInputElement | null>(null)
+  const [prodToDelete, setProdToDelete] = useState<Produto | null>(null)
 
   // Modal Reposição Rápida de Estoque
   const [isReporModalOpen, setIsReporModalOpen] = useState(false)
@@ -76,7 +88,7 @@ export default function ProductsManager() {
     estoque_minimo: string
   }>({
     nome: '',
-    categoria_id: categorias[0]?.id || '',
+    categoria_id: categorias.find((c) => c.ativo !== false)?.id || categorias[0]?.id || '',
     preco: '',
     codigo_rapido: '',
     emite_ficha_individual: true,
@@ -91,18 +103,8 @@ export default function ProductsManager() {
     estoque_minimo: '10',
   })
 
-  // Modal Categoria
-  const [isCatModalOpen, setIsCatModalOpen] = useState(false)
-  const [editingCatId, setEditingCatId] = useState<string | null>(null)
-  const [catForm, setCatForm] = useState<{
-    nome: string
-    cor: string
-    ordem: number
-  }>({
-    nome: '',
-    cor: '#2563EB',
-    ordem: categorias.length + 1,
-  })
+  const categoriasAtivas = categorias.filter((c) => c.ativo !== false)
+  const categoriasParaSelect = categorias // mostra todas no select (inclui inativas já vinculadas)
 
   // Filtragem de Produtos
   const filteredProdutos = produtos.filter((prod) => {
@@ -118,7 +120,7 @@ export default function ProductsManager() {
     setEditingProdId(null)
     setProdForm({
       nome: '',
-      categoria_id: categorias[0]?.id || '',
+      categoria_id: categoriasAtivas[0]?.id || categorias[0]?.id || '',
       preco: '',
       codigo_rapido: String(produtos.length + 101),
       emite_ficha_individual: true,
@@ -142,7 +144,7 @@ export default function ProductsManager() {
       categoria_id: prod.categoria_id,
       preco: prod.preco.toString(),
       codigo_rapido: prod.codigo_rapido,
-      emite_ficha_individual: prod.emite_ficha_individual,
+      emite_ficha_individual: true,
       ativo: prod.ativo,
       descricao: prod.descricao || '',
       is_combo: !!prod.is_combo,
@@ -175,25 +177,6 @@ export default function ProductsManager() {
     setReporProd(null)
   }
 
-  // Upload local de imagem de produto (base64 offline)
-  const handleProdImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
-      toast.error('Selecione uma imagem válida (PNG, JPG, WebP).')
-      return
-    }
-
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string
-      setProdForm((prev) => ({ ...prev, imagem_base64: base64 }))
-      toast.success('Imagem carregada com sucesso!')
-    }
-    reader.readAsDataURL(file)
-    e.target.value = ''
-  }
-
   const handleSaveProd = (e: React.FormEvent) => {
     e.preventDefault()
     const precoNum = parseFloat(prodForm.preco.replace(',', '.')) || 0
@@ -201,10 +184,41 @@ export default function ProductsManager() {
       toast.error('Informe o nome do produto.')
       return
     }
+    if (!prodForm.codigo_rapido.trim()) {
+      toast.error('Informe o código rápido.')
+      return
+    }
+    if (precoNum <= 0) {
+      toast.error('Informe um preço válido maior que zero.')
+      return
+    }
+    if (!prodForm.categoria_id) {
+      toast.error('Selecione uma categoria. Cadastre uma categoria antes, se necessário.')
+      return
+    }
+
+    const codigoNorm = prodForm.codigo_rapido.trim()
+    const codigoDuplicado = produtos.some(
+      (p) => p.codigo_rapido === codigoNorm && p.id !== editingProdId,
+    )
+    if (codigoDuplicado) {
+      toast.error(`Já existe um produto com o código #${codigoNorm}.`)
+      return
+    }
+
+    if (prodForm.is_combo && prodForm.itens_combo.length === 0) {
+      toast.error('Adicione ao menos um item na composição do combo.')
+      return
+    }
 
     const payload = {
       ...prodForm,
+      nome: prodForm.nome.trim(),
+      codigo_rapido: codigoNorm,
       preco: precoNum,
+      imagem_base64: prodForm.imagem_base64,
+      // Foto é só para a tela de venda — nunca na ficha térmica
+      imprimir_imagem_ficha: false,
       controla_estoque: prodForm.controla_estoque,
       estoque_atual:
         prodForm.controla_estoque && prodForm.estoque_atual !== ''
@@ -222,6 +236,33 @@ export default function ProductsManager() {
       addProduto(payload)
     }
     setIsProdModalOpen(false)
+  }
+
+  const handleDuplicateProd = (prod: Produto) => {
+    setEditingProdId(null)
+    setProdForm({
+      nome: `${prod.nome} (cópia)`,
+      categoria_id: prod.categoria_id,
+      preco: prod.preco.toString(),
+      codigo_rapido: String(produtos.length + 101),
+      emite_ficha_individual: true,
+      ativo: true,
+      descricao: prod.descricao || '',
+      is_combo: !!prod.is_combo,
+      itens_combo: prod.itens_combo ? [...prod.itens_combo] : [],
+      imagem_base64: prod.imagem_base64,
+      imprimir_imagem_ficha: prod.imprimir_imagem_ficha ?? false,
+      controla_estoque: !!prod.controla_estoque,
+      estoque_atual: prod.estoque_atual !== undefined ? String(prod.estoque_atual) : '',
+      estoque_minimo: prod.estoque_minimo !== undefined ? String(prod.estoque_minimo) : '10',
+    })
+    setIsProdModalOpen(true)
+  }
+
+  const handleConfirmDeleteProd = () => {
+    if (!prodToDelete) return
+    deleteProduto(prodToDelete.id)
+    setProdToDelete(null)
   }
 
   // Combos: Adicionar item ao combo
@@ -250,55 +291,6 @@ export default function ProductsManager() {
     }))
   }
 
-  // Abertura de Modal de Categoria
-  const handleOpenNewCat = () => {
-    setEditingCatId(null)
-    setCatForm({
-      nome: '',
-      cor: '#2563EB',
-      ordem: categorias.length + 1,
-    })
-    setIsCatModalOpen(true)
-  }
-
-  const handleOpenEditCat = (cat: Categoria) => {
-    setEditingCatId(cat.id)
-    setCatForm({
-      nome: cat.nome,
-      cor: cat.cor,
-      ordem: cat.ordem,
-    })
-    setIsCatModalOpen(true)
-  }
-
-  const handleSaveCat = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!catForm.nome.trim()) {
-      toast.error('Informe o nome da categoria.')
-      return
-    }
-
-    if (editingCatId) {
-      updateCategoria(editingCatId, catForm)
-    } else {
-      addCategoria(catForm)
-    }
-    setIsCatModalOpen(false)
-  }
-
-  const coresPredefinidas = [
-    '#2563EB', // Azul
-    '#EA580C', // Laranja
-    '#EC4899', // Rosa
-    '#8B5CF6', // Roxo
-    '#059669', // Verde
-    '#DC2626', // Vermelho
-    '#D97706', // Amarelo/Âmbar
-    '#4F46E5', // Índigo
-    '#0891B2', // Ciano
-    '#475569', // Cinza
-  ]
-
   return (
     <div className="h-full flex flex-col overflow-y-auto p-4 md:p-6 space-y-6 bg-background text-foreground">
       {/* CABEÇALHO */}
@@ -325,7 +317,7 @@ export default function ProductsManager() {
             </Button>
           ) : (
             <Button
-              onClick={handleOpenNewCat}
+              onClick={() => setCatCreateSignal((n) => n + 1)}
               className="bg-primary hover:bg-primary/90 font-bold gap-2"
             >
               <Plus className="w-4 h-4" />
@@ -367,19 +359,46 @@ export default function ProductsManager() {
       {activeTab === 'produtos' && (
         <div className="space-y-4">
           {/* BARRA DE PESQUISA & FILTRO POR CATEGORIA */}
-          <div className="flex flex-col sm:flex-row items-center gap-3">
-            <div className="relative flex-1 w-full">
-              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-              <Input
-                type="text"
-                placeholder="Buscar produtos por nome ou código..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 h-10 text-sm"
-              />
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative flex-1 w-full">
+                <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  type="text"
+                  placeholder="Buscar produtos por nome ou código..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9 h-10 text-sm"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 p-1 rounded-lg border border-border bg-muted/30 shrink-0 self-end sm:self-auto">
+                <Button
+                  type="button"
+                  variant={viewMode === 'lista' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('lista')}
+                  className="h-8 px-2.5 gap-1.5 text-xs font-bold"
+                  title="Visualização em lista"
+                >
+                  <List className="w-3.5 h-3.5" />
+                  Lista
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === 'grade' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setViewMode('grade')}
+                  className="h-8 px-2.5 gap-1.5 text-xs font-bold"
+                  title="Visualização em grade com fotos"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  Grade
+                </Button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
+            <div className="flex items-center gap-2 overflow-x-auto w-full">
               <Button
                 variant={selectedCatFilter === 'todas' ? 'default' : 'outline'}
                 size="sm"
@@ -388,27 +407,158 @@ export default function ProductsManager() {
               >
                 Todas
               </Button>
-              {categorias.map((c) => (
-                <Button
-                  key={c.id}
-                  variant={selectedCatFilter === c.id ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setSelectedCatFilter(c.id)}
-                  className="text-xs font-bold shrink-0 gap-1.5"
-                >
-                  <span
-                    className="w-2 h-2 rounded-full inline-block"
-                    style={{ backgroundColor: c.cor }}
-                  />
-                  {c.nome}
-                </Button>
-              ))}
+              {categorias.map((c) => {
+                const CatIcon = getCategoryIcon(c.icone)
+                return (
+                  <Button
+                    key={c.id}
+                    variant={selectedCatFilter === c.id ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSelectedCatFilter(c.id)}
+                    className="text-xs font-bold shrink-0 gap-1.5"
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full inline-flex items-center justify-center text-white"
+                      style={{ backgroundColor: c.cor }}
+                    >
+                      <CatIcon className="w-2.5 h-2.5" />
+                    </span>
+                    {c.nome}
+                    {c.ativo === false && (
+                      <span className="text-[9px] opacity-70">(oculta)</span>
+                    )}
+                  </Button>
+                )
+              })}
             </div>
           </div>
 
-          {/* TABELA DE PRODUTOS */}
-          <div className="border border-border rounded-xl bg-card overflow-hidden shadow-xs">
-            <table className="w-full text-xs text-left">
+          {filteredProdutos.length === 0 ? (
+            <div className="border border-dashed border-border rounded-2xl bg-card/50 p-10 text-center space-y-3">
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-muted flex items-center justify-center">
+                <Package className="w-7 h-7 text-muted-foreground opacity-60" />
+              </div>
+              <div>
+                <p className="font-bold text-foreground">Nenhum produto encontrado</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {produtos.length === 0
+                    ? 'Cadastre o primeiro produto com foto para agilizar o atendimento no balcão.'
+                    : 'Ajuste a busca ou o filtro de categoria.'}
+                </p>
+              </div>
+              {produtos.length === 0 && (
+                <Button
+                  onClick={handleOpenNewProd}
+                  className="bg-primary hover:bg-primary/90 font-bold gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Cadastrar produto
+                </Button>
+              )}
+            </div>
+          ) : viewMode === 'grade' ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+              {filteredProdutos.map((prod) => {
+                const cat = categorias.find((c) => c.id === prod.categoria_id)
+                const isControlled = prod.controla_estoque && prod.estoque_atual !== undefined
+                const estoqueQtd = prod.estoque_atual ?? 0
+                const isEsgotado = isControlled && estoqueQtd <= 0
+
+                return (
+                  <div
+                    key={prod.id}
+                    className="group rounded-2xl border border-border bg-card overflow-hidden shadow-xs hover:border-primary/40 hover:shadow-md transition-all flex flex-col"
+                  >
+                    <div className="relative aspect-square bg-muted/40 overflow-hidden">
+                      {prod.imagem_base64 ? (
+                        <img
+                          src={prod.imagem_base64}
+                          alt={prod.nome}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-muted-foreground gap-1">
+                          <ImageIcon className="w-10 h-10 opacity-30" />
+                          <span className="text-[10px] font-semibold opacity-60">Sem foto</span>
+                        </div>
+                      )}
+                      <span className="absolute top-2 left-2 font-mono text-[10px] font-black px-1.5 py-0.5 rounded bg-background/90 text-muted-foreground border border-border">
+                        #{prod.codigo_rapido}
+                      </span>
+                      {!prod.ativo && (
+                        <span className="absolute top-2 right-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          Inativo
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-3 flex flex-col flex-1 gap-2">
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-sm text-foreground line-clamp-2 leading-snug">
+                          {prod.nome}
+                        </h4>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <Badge
+                            variant="outline"
+                            className="font-semibold text-[9px]"
+                            style={{ borderColor: cat?.cor, color: cat?.cor }}
+                          >
+                            {cat?.nome || '—'}
+                          </Badge>
+                          {prod.is_combo && (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[9px] uppercase font-bold py-0">
+                              Combo
+                            </Badge>
+                          )}
+                          {isEsgotado && (
+                            <Badge variant="destructive" className="text-[9px] font-bold py-0">
+                              Esgotado
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-auto flex items-center justify-between pt-2 border-t border-border/60">
+                        <span className="font-mono font-black text-sm">
+                          {formatCurrency(prod.preco)}
+                        </span>
+                        <div className="flex items-center gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDuplicateProd(prod)}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            title="Duplicar"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleOpenEditProd(prod)}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            title="Editar"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setProdToDelete(prod)}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                            title="Excluir"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+          /* TABELA DE PRODUTOS */
+          <div className="border border-border rounded-xl bg-card overflow-hidden shadow-xs overflow-x-auto">
+            <table className="w-full text-xs text-left min-w-[720px]">
               <thead className="bg-muted/50 text-muted-foreground font-semibold border-b border-border">
                 <tr>
                   <th className="p-3">Cód.</th>
@@ -423,14 +573,7 @@ export default function ProductsManager() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filteredProdutos.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                      Nenhum produto cadastrado com esses filtros.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProdutos.map((prod) => {
+                {filteredProdutos.map((prod) => {
                     const cat = categorias.find((c) => c.id === prod.categoria_id)
                     const isControlled = prod.controla_estoque && prod.estoque_atual !== undefined
                     const estoqueQtd = prod.estoque_atual ?? 0
@@ -530,13 +673,9 @@ export default function ProductsManager() {
                             <span className="text-emerald-600 dark:text-emerald-400 font-semibold text-[11px]">
                               Desmembra em fichas individuais
                             </span>
-                          ) : prod.emite_ficha_individual !== false ? (
+                          ) : (
                             <span className="text-blue-600 dark:text-blue-400 font-semibold text-[11px]">
                               1 Ficha por unidade
-                            </span>
-                          ) : (
-                            <span className="text-amber-600 dark:text-amber-400 font-semibold text-[11px]">
-                              Cupom único (sem ficha individual)
                             </span>
                           )}
                         </td>
@@ -551,88 +690,47 @@ export default function ProductsManager() {
                             </span>
                           )}
                         </td>
-                        <td className="p-3 text-right space-x-1">
+                        <td className="p-3 text-right space-x-0.5 whitespace-nowrap">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDuplicateProd(prod)}
+                            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            title="Duplicar produto"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
                             onClick={() => handleOpenEditProd(prod)}
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                            title="Editar"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => {
-                              if (confirm(`Deseja remover o produto "${prod.nome}"?`)) {
-                                deleteProduto(prod.id)
-                              }
-                            }}
+                            onClick={() => setProdToDelete(prod)}
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                            title="Excluir"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </td>
                       </tr>
                     )
-                  })
-                )}
+                  })}
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
 
       {/* CONTEÚDO DA ABA: CATEGORIAS */}
-      {activeTab === 'categorias' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categorias.map((cat) => {
-            const count = produtos.filter((p) => p.categoria_id === cat.id).length
-            return (
-              <div
-                key={cat.id}
-                className="p-4 rounded-2xl border border-border bg-card shadow-xs flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold"
-                    style={{ backgroundColor: cat.cor }}
-                  >
-                    <Tag className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-sm text-foreground">{cat.nome}</h4>
-                    <p className="text-xs text-muted-foreground">{count} produto(s) associado(s)</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleOpenEditCat(cat)}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      if (confirm(`Deseja excluir a categoria "${cat.nome}"?`)) {
-                        deleteCategoria(cat.id)
-                      }
-                    }}
-                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
+      {activeTab === 'categorias' && <CategoriesPanel createSignal={catCreateSignal} />}
 
       {/* MODAL: CRIAR / EDITAR PRODUTO */}
       <Dialog open={isProdModalOpen} onOpenChange={setIsProdModalOpen}>
@@ -668,12 +766,27 @@ export default function ProductsManager() {
                   onChange={(e) => setProdForm({ ...prodForm, categoria_id: e.target.value })}
                   className="w-full h-11 px-3 rounded-md border border-input bg-background text-foreground text-sm font-medium"
                 >
-                  {categorias.map((c) => (
+                  {categoriasParaSelect.length === 0 && (
+                    <option value="">Cadastre uma categoria primeiro</option>
+                  )}
+                  {categoriasParaSelect.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.nome}
+                      {c.ativo === false ? ' (oculta no PDV)' : ''}
                     </option>
                   ))}
                 </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsProdModalOpen(false)
+                    setActiveTab('categorias')
+                    setCatCreateSignal((n) => n + 1)
+                  }}
+                  className="text-[11px] text-primary font-semibold mt-1.5 hover:underline"
+                >
+                  + Gerenciar / criar categorias
+                </button>
               </div>
 
               <div>
@@ -772,106 +885,40 @@ export default function ProductsManager() {
               )}
             </div>
 
-            {/* UPLOAD LOCAL DA FOTO DO PRODUTO (BASE64 OFFLINE) */}
-            <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
-              <Label className="text-xs font-bold uppercase text-muted-foreground block">
-                Imagem do Produto (Offline / Base64)
-              </Label>
-              <input
-                ref={(el) => setProdImageInputRef(el)}
-                type="file"
-                accept="image/*"
-                onChange={handleProdImageChange}
-                className="hidden"
-              />
-              <div className="flex items-center gap-4">
-                {prodForm.imagem_base64 ? (
-                  <div className="relative group">
-                    <img
-                      src={prodForm.imagem_base64}
-                      alt="Prévia do Produto"
-                      className="w-20 h-20 object-cover rounded-xl border-2 border-primary/40 shadow-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setProdForm((prev) => ({ ...prev, imagem_base64: undefined }))}
-                      className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-destructive text-white flex items-center justify-center shadow-md hover:scale-110 transition-transform"
-                      title="Remover imagem"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div
-                    onClick={() => prodImageInputRef?.click()}
-                    className="w-20 h-20 rounded-xl border-2 border-dashed border-border hover:border-primary/60 cursor-pointer flex flex-col items-center justify-center text-muted-foreground hover:text-foreground bg-background transition-all shrink-0"
-                  >
-                    <ImageIcon className="w-6 h-6 mb-1 opacity-60" />
-                    <span className="text-[10px] font-bold">Adicionar</span>
-                  </div>
-                )}
+            <ProductImagePicker
+              value={prodForm.imagem_base64}
+              onChange={(base64) =>
+                setProdForm((prev) => ({
+                  ...prev,
+                  imagem_base64: base64,
+                }))
+              }
+            />
 
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => prodImageInputRef?.click()}
-                      className="text-xs font-semibold gap-1.5 h-8"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      {prodForm.imagem_base64 ? 'Alterar Foto' : 'Selecionar Foto'}
-                    </Button>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Aparece no card touch do PDV para facilitar a identificação rápida pelo
-                    operador.
-                  </p>
-
-                  {/* OPÇÃO DE IMPRIMIR NA FICHA */}
-                  {prodForm.imagem_base64 && (
-                    <div className="flex items-center justify-between pt-1 border-t border-border/60">
-                      <div>
-                        <span className="text-xs font-bold text-foreground">
-                          Imprimir foto na ficha
-                        </span>
-                        <p className="text-[10px] text-muted-foreground">
-                          Imprime versão PB térmica na ficha
-                        </p>
-                      </div>
-                      <Switch
-                        checked={!!prodForm.imprimir_imagem_ficha}
-                        onCheckedChange={(val) =>
-                          setProdForm({ ...prodForm, imprimir_imagem_ficha: val })
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* SWITCHES: INDIVIDUAL & COMBO */}
+            {/* SWITCHES: COMBO */}
             <div className="p-4 rounded-xl border border-border bg-muted/20 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="font-bold text-xs">Emissão de Fichas Térmicas</div>
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                    Produto ativo no PDV
+                  </div>
                   <div className="text-[11px] text-muted-foreground">
-                    {prodForm.emite_ficha_individual
-                      ? 'Emite 1 ficha térmica individual para cada unidade (padrão obrigatório do PDV).'
-                      : 'Cupom único: não emite ficha individual (gera comprovante único por item).'}
+                    Desative para ocultar do balcão sem excluir o cadastro.
                   </div>
                 </div>
                 <Switch
-                  checked={prodForm.emite_ficha_individual}
-                  onCheckedChange={(val) =>
-                    setProdForm({ ...prodForm, emite_ficha_individual: val })
-                  }
+                  checked={prodForm.ativo}
+                  onCheckedChange={(val) => setProdForm({ ...prodForm, ativo: val })}
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-border">
+              <div className="p-3 rounded-lg bg-background border border-border text-[11px] text-muted-foreground">
+                <strong className="text-foreground">Emissão de fichas:</strong> sempre 1 ficha
+                térmica por unidade vendida (ex.: 10 Coca-Colas = 10 fichas).
+              </div>
+
+              <div className="flex items-center justify-between pt-1">
                 <div>
                   <div className="font-bold text-xs flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
@@ -1036,66 +1083,27 @@ export default function ProductsManager() {
         </DialogContent>
       </Dialog>
 
-      {/* MODAL: CRIAR / EDITAR CATEGORIA */}
-      <Dialog open={isCatModalOpen} onOpenChange={setIsCatModalOpen}>
-        <DialogContent className="max-w-md bg-background text-foreground border border-border shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-bold">
-              {editingCatId ? 'Editar Categoria' : 'Nova Categoria'}
-            </DialogTitle>
-          </DialogHeader>
-
-          <form onSubmit={handleSaveCat} className="space-y-4 py-2">
-            <div>
-              <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
-                Nome da Categoria
-              </Label>
-              <Input
-                type="text"
-                placeholder="Ex: Bebidas Artesanais"
-                value={catForm.nome}
-                onChange={(e) => setCatForm({ ...catForm, nome: e.target.value })}
-                required
-                className="h-11 font-semibold"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
-                Cor de Identificação Visual (Botões do PDV)
-              </Label>
-              <div className="flex flex-wrap gap-2 my-2">
-                {coresPredefinidas.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setCatForm({ ...catForm, cor: color })}
-                    className={`w-8 h-8 rounded-full transition-transform ${
-                      catForm.cor === color ? 'scale-125 ring-2 ring-primary ring-offset-2' : ''
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-              <Input
-                type="text"
-                value={catForm.cor}
-                onChange={(e) => setCatForm({ ...catForm, cor: e.target.value })}
-                className="h-9 font-mono text-xs uppercase"
-              />
-            </div>
-
-            <DialogFooter className="pt-4 border-t border-border flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsCatModalOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-primary hover:bg-primary/90 font-bold">
-                Salvar Categoria
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <AlertDialog open={!!prodToDelete} onOpenChange={(open) => !open && setProdToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir produto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O produto <strong>{prodToDelete?.nome}</strong> será removido do catálogo. Esta ação
+              não pode ser desfeita. Preferindo apenas ocultar no balcão, edite e desative o
+              produto.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteProd}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

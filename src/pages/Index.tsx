@@ -17,10 +17,10 @@ import {
   Package,
   Layers,
   CheckCircle,
-  Tag,
   ArrowRight,
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { getCategoryIcon } from '@/lib/categoryIcons'
 import { toast } from 'sonner'
 
 export default function Index() {
@@ -45,6 +45,11 @@ export default function Index() {
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   // Filtragem de produtos por categoria e busca por nome ou código rápido
+  const categoriasVisiveis = useMemo(
+    () => categorias.filter((c) => c.ativo !== false).sort((a, b) => a.ordem - b.ordem),
+    [categorias],
+  )
+
   const filteredProdutos = useMemo(() => {
     return produtos.filter((prod) => {
       if (!prod.ativo) return false
@@ -57,6 +62,16 @@ export default function Index() {
       return matchCat && (matchName || matchCode)
     })
   }, [produtos, selectedCategoriaId, searchQuery])
+
+  // Se a categoria selecionada foi ocultada, volta para "todas"
+  useEffect(() => {
+    if (
+      selectedCategoriaId !== 'todas' &&
+      !categoriasVisiveis.some((c) => c.id === selectedCategoriaId)
+    ) {
+      setSelectedCategoriaId('todas')
+    }
+  }, [categoriasVisiveis, selectedCategoriaId])
 
   // Teclado no PDV (Enter para finalizar, Esc para limpar, etc)
   useEffect(() => {
@@ -104,7 +119,7 @@ export default function Index() {
   }
 
   return (
-    <div className="h-full flex flex-col lg:flex-row overflow-hidden bg-background">
+    <div className="relative h-full flex flex-col lg:flex-row overflow-hidden bg-background min-h-0">
       {/* ALERTA DE CAIXA FECHADO */}
       {!caixaAtivo && (
         <div className="absolute inset-0 bg-background/80 backdrop-blur-sm z-30 flex items-center justify-center p-4">
@@ -184,15 +199,16 @@ export default function Index() {
           >
             Todos ({produtos.filter((p) => p.ativo).length})
           </button>
-          {categorias.map((cat) => {
+          {categoriasVisiveis.map((cat) => {
             const isSelected = selectedCategoriaId === cat.id
             const count = produtos.filter((p) => p.categoria_id === cat.id && p.ativo).length
+            const CatIcon = getCategoryIcon(cat.icone)
             return (
               <button
                 key={cat.id}
                 type="button"
                 onClick={() => setSelectedCategoriaId(cat.id)}
-                className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 border ${
+                className={`px-3 sm:px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider shrink-0 transition-all flex items-center gap-2 border ${
                   isSelected
                     ? 'text-white shadow-md scale-105 border-transparent'
                     : 'bg-card text-foreground hover:bg-muted border-border'
@@ -203,9 +219,13 @@ export default function Index() {
                 }}
               >
                 <span
-                  className="w-2.5 h-2.5 rounded-full inline-block shrink-0"
-                  style={{ backgroundColor: isSelected ? '#FFFFFF' : cat.cor }}
-                />
+                  className={`w-5 h-5 rounded-full inline-flex items-center justify-center shrink-0 ${
+                    isSelected ? 'bg-white/20 text-white' : 'text-white'
+                  }`}
+                  style={{ backgroundColor: isSelected ? undefined : cat.cor }}
+                >
+                  <CatIcon className="w-3 h-3" />
+                </span>
                 <span>{cat.nome}</span>
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-black/20 text-white' : 'bg-muted text-muted-foreground'}`}
@@ -228,7 +248,7 @@ export default function Index() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-3">
               {filteredProdutos.map((prod) => {
                 const cat = categorias.find((c) => c.id === prod.categoria_id)
                 const itemInCart = carrinho.find((it) => it.produto.id === prod.id)
@@ -291,16 +311,28 @@ export default function Index() {
                       </div>
                     </div>
 
-                    {/* IMAGEM DO PRODUTO (SE HOUVER) */}
-                    {prod.imagem_base64 && (
-                      <div className="w-full h-24 mb-2 overflow-hidden rounded-xl border border-border/60 bg-muted/20 flex items-center justify-center">
+                    {/* IMAGEM DO PRODUTO (sempre reserva espaço para alinhamento da grade) */}
+                    <div className="w-full h-16 sm:h-20 lg:h-24 mb-2 overflow-hidden rounded-xl border border-border/60 bg-muted/30 flex items-center justify-center">
+                      {prod.imagem_base64 ? (
                         <img
                           src={prod.imagem_base64}
                           alt={prod.nome}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                      </div>
-                    )}
+                      ) : (
+                        <div
+                          className="w-full h-full flex items-center justify-center"
+                          style={{ backgroundColor: `${cat?.cor || '#3B82F6'}18` }}
+                        >
+                          <span
+                            className="text-2xl font-black opacity-40"
+                            style={{ color: cat?.cor || '#3B82F6' }}
+                          >
+                            {prod.nome.slice(0, 2).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
                     {/* CORPO DO CARD: NOME DO PRODUTO */}
                     <div className="w-full my-1">
@@ -338,7 +370,7 @@ export default function Index() {
       </div>
 
       {/* ÁREA DIREITA: CARRINHO LATERAL / PAINEL TOTALIZADOR */}
-      <div className="w-full lg:w-96 xl:w-[420px] bg-card border-l border-border flex flex-col h-auto lg:h-full shrink-0 shadow-lg z-10">
+      <div className="w-full lg:w-80 xl:w-96 2xl:w-[420px] bg-card border-t lg:border-t-0 lg:border-l border-border flex flex-col h-[min(42vh,380px)] lg:h-full shrink-0 shadow-lg z-10 min-h-0">
         {/* CABEÇALHO DO CARRINHO */}
         <div className="p-4 border-b border-border flex items-center justify-between bg-muted/20">
           <div className="flex items-center gap-2">

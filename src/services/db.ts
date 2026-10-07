@@ -11,38 +11,77 @@ import {
   FormaPagamento,
 } from '@/types/pos'
 import { INITIAL_CATEGORIAS, INITIAL_PRODUTOS, INITIAL_CONFIG, INITIAL_CAIXA } from './mockData'
+import { storageGetItem, storageSetItem } from './storage'
 
 const STORAGE_KEYS = {
-  CONFIG: 'pdv_fichas_config',
-  CATEGORIAS: 'pdv_fichas_categorias',
-  PRODUTOS: 'pdv_fichas_produtos',
-  CAIXAS: 'pdv_fichas_caixas',
-  MOVIMENTACOES: 'pdv_fichas_movimentacoes',
-  VENDAS: 'pdv_fichas_vendas',
-  FICHAS: 'pdv_fichas_fichas',
-  CAIXA_ATIVO_ID: 'pdv_fichas_caixa_ativo_id',
-  SEQUENCIAL_FICHA: 'pdv_fichas_seq_ficha',
-  SEQUENCIAL_VENDA: 'pdv_fichas_seq_venda',
+  CONFIG: 'templarios_pdv_config',
+  CATEGORIAS: 'templarios_pdv_categorias',
+  PRODUTOS: 'templarios_pdv_produtos',
+  CAIXAS: 'templarios_pdv_caixas',
+  MOVIMENTACOES: 'templarios_pdv_movimentacoes',
+  VENDAS: 'templarios_pdv_vendas',
+  FICHAS: 'templarios_pdv_fichas',
+  CAIXA_ATIVO_ID: 'templarios_pdv_caixa_ativo_id',
+  SEQUENCIAL_FICHA: 'templarios_pdv_seq_ficha',
+  SEQUENCIAL_VENDA: 'templarios_pdv_seq_venda',
 }
 
-// Safe getItem with fallback
+/** Chaves de histórico: JSON inválido NÃO pode virar [] e sobrescrever o disco. */
+const CRITICAL_ARRAY_KEYS = new Set([
+  STORAGE_KEYS.VENDAS,
+  STORAGE_KEYS.FICHAS,
+  STORAGE_KEYS.PRODUTOS,
+  STORAGE_KEYS.CATEGORIAS,
+  STORAGE_KEYS.CAIXAS,
+  STORAGE_KEYS.MOVIMENTACOES,
+])
+
+export class StorageCorruptionError extends Error {
+  constructor(public readonly key: string) {
+    super(
+      `Dados locais corrompidos (${key}). Não continue vendendo — restaure um backup em Configurações.`,
+    )
+    this.name = 'StorageCorruptionError'
+  }
+}
+
+// Persistência: SQLite (app nativo) ou localStorage (browser)
 function safeGet<T>(key: string, fallback: T): T {
   try {
-    const item = localStorage.getItem(key)
+    const item = storageGetItem(key)
     if (!item) return fallback
     return JSON.parse(item) as T
   } catch (err) {
-    console.error(`Erro ao carregar chave ${key} do localStorage`, err)
+    console.error(`Erro ao carregar chave ${key} do armazenamento local`, err)
+    if (CRITICAL_ARRAY_KEYS.has(key)) {
+      throw new StorageCorruptionError(key)
+    }
     return fallback
   }
 }
 
-// Safe setItem
+function safeGetArray<T>(key: string): T[] {
+  const item = storageGetItem(key)
+  if (!item) return []
+  try {
+    const parsed = JSON.parse(item) as unknown
+    if (!Array.isArray(parsed)) {
+      throw new StorageCorruptionError(key)
+    }
+    return parsed as T[]
+  } catch (err) {
+    if (err instanceof StorageCorruptionError) throw err
+    console.error(`Erro ao carregar array ${key}`, err)
+    throw new StorageCorruptionError(key)
+  }
+}
+
 function safeSet<T>(key: string, value: T): void {
   try {
-    localStorage.setItem(key, JSON.stringify(value))
+    storageSetItem(key, JSON.stringify(value))
   } catch (err) {
-    console.error(`Erro ao gravar chave ${key} no localStorage`, err)
+    console.error(`Erro ao gravar chave ${key} no armazenamento local`, err)
+    throw err
   }
 }
 
@@ -69,32 +108,32 @@ export function generateSecurityHash(
 export class LocalDatabaseService {
   // Inicialização com dados padrão caso o storage esteja vazio
   static initDatabase(): void {
-    if (!localStorage.getItem(STORAGE_KEYS.CONFIG)) {
+    if (!storageGetItem(STORAGE_KEYS.CONFIG)) {
       safeSet(STORAGE_KEYS.CONFIG, INITIAL_CONFIG)
     }
-    if (!localStorage.getItem(STORAGE_KEYS.CATEGORIAS)) {
+    if (!storageGetItem(STORAGE_KEYS.CATEGORIAS)) {
       safeSet(STORAGE_KEYS.CATEGORIAS, INITIAL_CATEGORIAS)
     }
-    if (!localStorage.getItem(STORAGE_KEYS.PRODUTOS)) {
+    if (!storageGetItem(STORAGE_KEYS.PRODUTOS)) {
       safeSet(STORAGE_KEYS.PRODUTOS, INITIAL_PRODUTOS)
     }
-    if (!localStorage.getItem(STORAGE_KEYS.CAIXAS)) {
-      safeSet(STORAGE_KEYS.CAIXAS, [INITIAL_CAIXA])
-      safeSet(STORAGE_KEYS.CAIXA_ATIVO_ID, INITIAL_CAIXA.id)
+    if (!storageGetItem(STORAGE_KEYS.CAIXAS)) {
+      // Instalação limpa: sem turno aberto — operador deve abrir o caixa
+      safeSet(STORAGE_KEYS.CAIXAS, [])
     }
-    if (!localStorage.getItem(STORAGE_KEYS.MOVIMENTACOES)) {
+    if (!storageGetItem(STORAGE_KEYS.MOVIMENTACOES)) {
       safeSet(STORAGE_KEYS.MOVIMENTACOES, [])
     }
-    if (!localStorage.getItem(STORAGE_KEYS.VENDAS)) {
+    if (!storageGetItem(STORAGE_KEYS.VENDAS)) {
       safeSet(STORAGE_KEYS.VENDAS, [])
     }
-    if (!localStorage.getItem(STORAGE_KEYS.FICHAS)) {
+    if (!storageGetItem(STORAGE_KEYS.FICHAS)) {
       safeSet(STORAGE_KEYS.FICHAS, [])
     }
-    if (!localStorage.getItem(STORAGE_KEYS.SEQUENCIAL_FICHA)) {
+    if (!storageGetItem(STORAGE_KEYS.SEQUENCIAL_FICHA)) {
       safeSet(STORAGE_KEYS.SEQUENCIAL_FICHA, 1)
     }
-    if (!localStorage.getItem(STORAGE_KEYS.SEQUENCIAL_VENDA)) {
+    if (!storageGetItem(STORAGE_KEYS.SEQUENCIAL_VENDA)) {
       safeSet(STORAGE_KEYS.SEQUENCIAL_VENDA, 1)
     }
   }
@@ -102,7 +141,30 @@ export class LocalDatabaseService {
   // CONFIGURAÇÕES
   static getConfig(): Configuracoes {
     this.initDatabase()
-    return safeGet<Configuracoes>(STORAGE_KEYS.CONFIG, INITIAL_CONFIG)
+    const saved = safeGet<Configuracoes>(STORAGE_KEYS.CONFIG, INITIAL_CONFIG)
+    const merged: Configuracoes = {
+      ...INITIAL_CONFIG,
+      ...saved,
+      auto_imprimir_ao_finalizar: saved.auto_imprimir_ao_finalizar !== false,
+      corte_automatico: saved.corte_automatico !== false,
+      ficha_mostrar_qrcode: false,
+      modo_impressao: saved.modo_impressao || 'escpos',
+    }
+
+    // Migração: layout Show de Prêmios + impressão direta + picote
+    const migratedKey = 'templarios_pdv_ficha_show_v2'
+    if (!storageGetItem(migratedKey)) {
+      merged.nome_evento = 'Show de Prêmios'
+      merged.subtitulo_evento = 'Bar Templários'
+      merged.rodape_cupom = 'Organização: Templários da Paz'
+      merged.simular_impressao_tela = false
+      merged.corte_automatico = true
+      merged.auto_imprimir_ao_finalizar = true
+      safeSet(STORAGE_KEYS.CONFIG, merged)
+      storageSetItem(migratedKey, '1')
+    }
+
+    return merged
   }
 
   static saveConfig(config: Configuracoes): void {
@@ -112,9 +174,18 @@ export class LocalDatabaseService {
   // CATEGORIAS
   static getCategorias(): Categoria[] {
     this.initDatabase()
-    return safeGet<Categoria[]>(STORAGE_KEYS.CATEGORIAS, INITIAL_CATEGORIAS).sort(
-      (a, b) => a.ordem - b.ordem,
-    )
+    const item = storageGetItem(STORAGE_KEYS.CATEGORIAS)
+    const list = item
+      ? safeGetArray<Categoria>(STORAGE_KEYS.CATEGORIAS)
+      : [...INITIAL_CATEGORIAS]
+    return list
+      .map((c) => ({
+        ...c,
+        ativo: c.ativo !== false,
+        icone: c.icone || 'Tag',
+        ordem: c.ordem || 1,
+      }))
+      .sort((a, b) => a.ordem - b.ordem)
   }
 
   static saveCategorias(categorias: Categoria[]): void {
@@ -123,9 +194,12 @@ export class LocalDatabaseService {
 
   static addCategoria(categoria: Omit<Categoria, 'id'>): Categoria {
     const categorias = this.getCategorias()
+    const maxOrdem = categorias.reduce((max, c) => Math.max(max, c.ordem || 0), 0)
     const newCat: Categoria = {
       ...categoria,
       id: `cat-${Date.now()}`,
+      ordem: categoria.ordem || maxOrdem + 1,
+      ativo: categoria.ativo !== false,
     }
     categorias.push(newCat)
     this.saveCategorias(categorias)
@@ -137,7 +211,46 @@ export class LocalDatabaseService {
     this.saveCategorias(categorias)
   }
 
-  static deleteCategoria(id: string): void {
+  /** Reordena categorias conforme a lista de IDs (1-based). */
+  static reorderCategorias(orderedIds: string[]): void {
+    const byId = new Map(this.getCategorias().map((c) => [c.id, c]))
+    const next: Categoria[] = []
+    orderedIds.forEach((id, index) => {
+      const cat = byId.get(id)
+      if (cat) {
+        next.push({ ...cat, ordem: index + 1 })
+        byId.delete(id)
+      }
+    })
+    // Mantém categorias não listadas no final
+    byId.forEach((cat) => {
+      next.push({ ...cat, ordem: next.length + 1 })
+    })
+    this.saveCategorias(next)
+  }
+
+  static moveCategoria(id: string, direction: 'up' | 'down'): void {
+    const cats = this.getCategorias()
+    const index = cats.findIndex((c) => c.id === id)
+    if (index < 0) return
+    const swapWith = direction === 'up' ? index - 1 : index + 1
+    if (swapWith < 0 || swapWith >= cats.length) return
+    const ordered = cats.map((c) => c.id)
+    ;[ordered[index], ordered[swapWith]] = [ordered[swapWith], ordered[index]]
+    this.reorderCategorias(ordered)
+  }
+
+  /**
+   * Remove categoria. Se `moveProdutosParaId` for informado, reatribui os produtos
+   * vinculados antes de excluir.
+   */
+  static deleteCategoria(id: string, moveProdutosParaId?: string): void {
+    if (moveProdutosParaId) {
+      const produtos = this.getProdutos().map((p) =>
+        p.categoria_id === id ? { ...p, categoria_id: moveProdutosParaId } : p,
+      )
+      this.saveProdutos(produtos)
+    }
     const categorias = this.getCategorias().filter((c) => c.id !== id)
     this.saveCategorias(categorias)
   }
@@ -145,7 +258,9 @@ export class LocalDatabaseService {
   // PRODUTOS
   static getProdutos(): Produto[] {
     this.initDatabase()
-    return safeGet<Produto[]>(STORAGE_KEYS.PRODUTOS, INITIAL_PRODUTOS)
+    const item = storageGetItem(STORAGE_KEYS.PRODUTOS)
+    if (!item) return [...INITIAL_PRODUTOS]
+    return safeGetArray<Produto>(STORAGE_KEYS.PRODUTOS)
   }
 
   static saveProdutos(produtos: Produto[]): void {
@@ -197,7 +312,7 @@ export class LocalDatabaseService {
   // CAIXAS / TURNOS
   static getCaixas(): Caixa[] {
     this.initDatabase()
-    return safeGet<Caixa[]>(STORAGE_KEYS.CAIXAS, [INITIAL_CAIXA])
+    return safeGetArray<Caixa>(STORAGE_KEYS.CAIXAS)
   }
 
   static getCaixaAtivo(): Caixa | null {
@@ -216,7 +331,18 @@ export class LocalDatabaseService {
   }
 
   static abrirCaixa(operador: string, saldoInicial: number, observacoes?: string): Caixa {
-    const caixas = this.getCaixas()
+    const caixas = this.getCaixas().map((c) =>
+      c.status === 'aberto'
+        ? {
+            ...c,
+            status: 'fechado' as const,
+            fechamento: c.fechamento || new Date().toISOString(),
+            observacoes: c.observacoes
+              ? `${c.observacoes} | Encerrado automaticamente ao abrir novo turno`
+              : 'Encerrado automaticamente ao abrir novo turno',
+          }
+        : c,
+    )
     const novoCaixa: Caixa = {
       id: `cx-${Date.now()}`,
       operador: operador || 'Operador',
@@ -260,7 +386,7 @@ export class LocalDatabaseService {
 
   // MOVIMENTAÇÕES DE CAIXA (SANGRIA / SUPRIMENTO)
   static getMovimentacoes(caixaId?: string): MovimentacaoCaixa[] {
-    const all = safeGet<MovimentacaoCaixa[]>(STORAGE_KEYS.MOVIMENTACOES, [])
+    const all = safeGetArray<MovimentacaoCaixa>(STORAGE_KEYS.MOVIMENTACOES)
     if (caixaId) {
       return all.filter((m) => m.caixa_id === caixaId)
     }
@@ -291,7 +417,7 @@ export class LocalDatabaseService {
 
   // VENDAS E EMISSÃO DE FICHAS
   static getVendas(caixaId?: string): Venda[] {
-    const all = safeGet<Venda[]>(STORAGE_KEYS.VENDAS, [])
+    const all = safeGetArray<Venda>(STORAGE_KEYS.VENDAS)
     if (caixaId) {
       return all.filter((v) => v.caixa_id === caixaId)
     }
@@ -299,7 +425,7 @@ export class LocalDatabaseService {
   }
 
   static getFichas(vendaId?: string): Ficha[] {
-    const all = safeGet<Ficha[]>(STORAGE_KEYS.FICHAS, [])
+    const all = safeGetArray<Ficha>(STORAGE_KEYS.FICHAS)
     if (vendaId) {
       return all.filter((f) => f.venda_id === vendaId)
     }
@@ -385,7 +511,7 @@ export class LocalDatabaseService {
                 venda_id: vendaId,
                 sequencial_venda: seqVenda,
                 produto_id: sub.produto_id,
-                produto_nome: `${subNome} (Combo)`,
+                produto_nome: subNome,
                 categoria_nome: subCat,
                 preco: 0,
                 codigo_validacao: codigoValidacao,
@@ -395,16 +521,13 @@ export class LocalDatabaseService {
                 operador: params.operador,
                 caixa_id: params.caixaId,
                 status: 'emitida',
-                produto_imagem_base64: subProd?.imagem_base64,
-                imprimir_imagem_ficha: subProd?.imprimir_imagem_ficha,
               })
               seqFicha++
             }
           })
         }
-      } else if (prod.emite_ficha_individual !== false) {
-        // COMPORTAMENTO PADRÃO E OBRIGATÓRIO: INDIVIDUAL
-        // 1 ficha própria e sequencial para CADA unidade do produto
+      } else {
+        // Sempre 1 ficha térmica por unidade (ex.: 10 Coca-Colas = 10 fichas)
         for (let i = 0; i < cartItem.quantidade; i++) {
           const { codigoValidacao, hashCompleto } = generateSecurityHash(
             seqFicha,
@@ -427,44 +550,13 @@ export class LocalDatabaseService {
             operador: params.operador,
             caixa_id: params.caixaId,
             status: 'emitida',
-            produto_imagem_base64: prod.imagem_base64,
-            imprimir_imagem_ficha: prod.imprimir_imagem_ficha,
           })
           seqFicha++
         }
-      } else {
-        // CUPOM ÚNICO (quando o produto tem flag emite_ficha_individual: false)
-        // Não gera 1 ficha por unidade, emite 1 cupom único para o item de linha
-        const { codigoValidacao, hashCompleto } = generateSecurityHash(
-          seqFicha,
-          prod.id,
-          nowIso,
-          config.salt_seguranca,
-        )
-        fichasEmitidas.push({
-          id: `fch-${Date.now()}-${seqFicha}`,
-          venda_id: vendaId,
-          sequencial_venda: seqVenda,
-          produto_id: prod.id,
-          produto_nome: `${cartItem.quantidade}x ${prod.nome} [Cupom Único]`,
-          categoria_nome: catMap.get(prod.categoria_id) || 'Geral',
-          preco: cartItem.quantidade * cartItem.preco_unitario,
-          codigo_validacao: codigoValidacao,
-          hash_seguranca: hashCompleto,
-          sequencial: seqFicha,
-          data_emissao: nowIso,
-          operador: params.operador,
-          caixa_id: params.caixaId,
-          status: 'emitida',
-          produto_imagem_base64: prod.imagem_base64,
-          imprimir_imagem_ficha: prod.imprimir_imagem_ficha,
-        })
-        seqFicha++
       }
     })
 
-    // Baixa automática de estoque para produtos com estoque controlado
-    // Calcular o consumo por produto_id (incluindo desmembramento de combos)
+    // Baixa automática de estoque — revalida no commit (estoque fresco do disco)
     const consumoEstoque = new Map<string, number>()
     params.itens.forEach((cartItem) => {
       const prod = cartItem.produto
@@ -480,6 +572,20 @@ export class LocalDatabaseService {
         consumoEstoque.set(prod.id, (consumoEstoque.get(prod.id) || 0) + cartItem.quantidade)
       }
     })
+
+    for (const [produtoId, qtdNecessaria] of consumoEstoque) {
+      const p = prodMap.get(produtoId)
+      if (!p) {
+        throw new Error(`Produto do carrinho não encontrado no catálogo (${produtoId}).`)
+      }
+      if (p.controla_estoque && p.estoque_atual !== undefined) {
+        if (qtdNecessaria > p.estoque_atual) {
+          throw new Error(
+            `Estoque insuficiente para "${p.nome}". Disponível: ${p.estoque_atual} un, necessário: ${qtdNecessaria} un.`,
+          )
+        }
+      }
+    }
 
     const updatedProdutos = produtos.map((p) => {
       const qtdConsumida = consumoEstoque.get(p.id)
@@ -511,10 +617,11 @@ export class LocalDatabaseService {
   // CANCELAMENTO DE VENDA E FICHAS
   static cancelarVenda(vendaId: string, motivo: string): boolean {
     const vendas = this.getVendas()
-    let found = false
+    const venda = vendas.find((v) => v.id === vendaId)
+    if (!venda || venda.status === 'cancelada') return false
+
     const updatedVendas = vendas.map((v) => {
       if (v.id === vendaId) {
-        found = true
         return {
           ...v,
           status: 'cancelada' as const,
@@ -524,77 +631,43 @@ export class LocalDatabaseService {
       return v
     })
 
-    if (found) {
-      safeSet(STORAGE_KEYS.VENDAS, updatedVendas)
-      const allFichas = this.getFichas().map((f) => {
-        if (f.venda_id === vendaId) {
-          return { ...f, status: 'cancelada' as const }
+    safeSet(STORAGE_KEYS.VENDAS, updatedVendas)
+    const allFichas = this.getFichas().map((f) => {
+      if (f.venda_id === vendaId) {
+        return { ...f, status: 'cancelada' as const }
+      }
+      return f
+    })
+    safeSet(STORAGE_KEYS.FICHAS, allFichas)
+
+    // Repõe estoque consumido (mesma regra da baixa na finalização)
+    const produtos = this.getProdutos()
+    const reposicao = new Map<string, number>()
+
+    venda.itens.forEach((item) => {
+      if (item.is_combo && item.itens_combo && item.itens_combo.length > 0) {
+        item.itens_combo.forEach((sub) => {
+          const qtd = item.quantidade * sub.quantidade
+          reposicao.set(sub.produto_id, (reposicao.get(sub.produto_id) || 0) + qtd)
+        })
+      } else {
+        reposicao.set(item.produto_id, (reposicao.get(item.produto_id) || 0) + item.quantidade)
+      }
+    })
+
+    const updatedProdutos = produtos.map((p) => {
+      const qtd = reposicao.get(p.id)
+      if (qtd && p.controla_estoque) {
+        return {
+          ...p,
+          estoque_atual: Math.max(0, (p.estoque_atual ?? 0) + qtd),
         }
-        return f
-      })
-      safeSet(STORAGE_KEYS.FICHAS, allFichas)
-    }
-
-    return found
-  }
-
-  // VALIDAÇÃO DE FICHA (BAIXA NO BALCÃO DE ENTREGA)
-  static validarFicha(
-    codigoOuHash: string,
-    operadorValidador: string,
-  ): {
-    sucesso: boolean
-    mensagem: string
-    ficha?: Ficha
-  } {
-    const termo = codigoOuHash.trim().toUpperCase()
-    const fichas = this.getFichas()
-    const index = fichas.findIndex(
-      (f) =>
-        f.codigo_validacao.toUpperCase() === termo ||
-        f.hash_seguranca.toUpperCase() === termo ||
-        String(f.sequencial) === termo ||
-        `#${String(f.sequencial).padStart(4, '0')}` === termo,
-    )
-
-    if (index === -1) {
-      return { sucesso: false, mensagem: 'Ficha não encontrada no sistema.' }
-    }
-
-    const ficha = fichas[index]
-
-    if (ficha.status === 'cancelada') {
-      return {
-        sucesso: false,
-        mensagem: 'ATENÇÃO: Esta ficha foi CANCELADA pela gerência!',
-        ficha,
       }
-    }
+      return p
+    })
+    this.saveProdutos(updatedProdutos)
 
-    if (ficha.status === 'utilizada') {
-      return {
-        sucesso: false,
-        mensagem: `ATENÇÃO: Ficha JÁ UTILIZADA em ${new Date(ficha.data_utilizacao || '').toLocaleString('pt-BR')} por ${ficha.operador_validacao || 'Balcão'}!`,
-        ficha,
-      }
-    }
-
-    // Marcar como utilizada
-    const updatedFicha: Ficha = {
-      ...ficha,
-      status: 'utilizada',
-      data_utilizacao: new Date().toISOString(),
-      operador_validacao: operadorValidador || 'Validador',
-    }
-
-    fichas[index] = updatedFicha
-    safeSet(STORAGE_KEYS.FICHAS, fichas)
-
-    return {
-      sucesso: true,
-      mensagem: `Ficha #${String(ficha.sequencial).padStart(4, '0')} (${ficha.produto_nome}) validada com sucesso!`,
-      ficha: updatedFicha,
-    }
+    return true
   }
 
   // RESUMO E ESTATÍSTICAS DE UM CAIXA

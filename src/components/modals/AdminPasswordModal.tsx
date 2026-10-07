@@ -33,7 +33,7 @@ export const AdminPasswordModal: React.FC<AdminPasswordModalProps> = ({
   const [erro, setErro] = useState(false)
 
   const handleConfirm = () => {
-    if (senha === config.senha_admin || senha === '1234') {
+    if (senha === config.senha_admin) {
       setSenha('')
       setErro(false)
       onSuccess()

@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-print-raw"
+description = "Permite enviar bytes RAW ESC/POS para a impressora térmica (Elgin i9)."
+commands.allow = ["print_raw"]

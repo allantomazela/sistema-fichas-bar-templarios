@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { usePos } from '@/context/PosContext'
 import { Configuracoes, LarguraBobina, Ficha } from '@/types/pos'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import {
   Save,
   CheckCircle2,
   AlertTriangle,
-  QrCode,
+  CreditCard,
   HardDrive,
   Sliders,
   Image as ImageIcon,
@@ -24,18 +24,46 @@ import {
 } from 'lucide-react'
 import { AdminPasswordModal } from '@/components/modals/AdminPasswordModal'
 import { ThermalFichaTicket } from '@/components/common/ThermalTickets'
+import { getStorageBackend } from '@/services/storage'
+import { pickBackupFileContent } from '@/services/backupFiles'
+import { listSystemPrinters, type PrinterInfo } from '@/services/escposElgin'
+import { isTauri } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 
 export default function Settings() {
-  const { config, updateConfig, exportarBackup, importarBackup, zerarVendas, caixaAtivo } = usePos()
+  const { config, updateConfig, exportarBackup, importarBackup, zerarVendas, caixaAtivo } =
+    usePos()
 
   const [formData, setFormData] = useState<Configuracoes>({ ...config })
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false)
   const [adminActionType, setAdminActionType] = useState<'reset' | 'import' | null>(null)
   const [pendingFileContent, setPendingFileContent] = useState<string | null>(null)
+  const storageBackend = getStorageBackend()
+  const [printers, setPrinters] = useState<PrinterInfo[]>([])
+  const [loadingPrinters, setLoadingPrinters] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!isTauri()) return
+    let cancelled = false
+    setLoadingPrinters(true)
+    void listSystemPrinters()
+      .then((list) => {
+        if (!cancelled) setPrinters(list)
+      })
+      .catch((err) => {
+        console.error(err)
+        if (!cancelled) toast.error('Não foi possível listar impressoras do Windows.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPrinters(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -66,8 +94,8 @@ export default function Settings() {
     venda_id: 'vnd-demo',
     sequencial_venda: 142,
     produto_id: 'prod-demo',
-    produto_nome: 'Pastel Especial de Carne',
-    categoria_nome: 'Comidas Típicas',
+    produto_nome: 'Cerveja Lata 350ml',
+    categoria_nome: 'Cervejas',
     preco: 12.0,
     codigo_validacao: '9A7B-3C2F',
     hash_seguranca: 'AUTH:9A7B-3C2F:SEQ:00142:PID:prod-dem',
@@ -76,7 +104,6 @@ export default function Settings() {
     operador: caixaAtivo ? caixaAtivo.operador : 'Operador 01',
     caixa_id: caixaAtivo ? caixaAtivo.id : 'cx-01',
     status: 'emitida',
-    imprimir_imagem_ficha: true,
   }
 
   const handleSaveConfig = (e: React.FormEvent) => {
@@ -105,6 +132,23 @@ export default function Settings() {
     setIsAdminModalOpen(true)
   }
 
+  const handleImportClick = async () => {
+    if (isTauri()) {
+      try {
+        const content = await pickBackupFileContent()
+        if (!content) return
+        setPendingFileContent(content)
+        setAdminActionType('import')
+        setIsAdminModalOpen(true)
+      } catch (err) {
+        console.error(err)
+        toast.error('Falha ao abrir o arquivo de backup.')
+      }
+      return
+    }
+    fileInputRef.current?.click()
+  }
+
   const handleAdminSuccess = () => {
     if (adminActionType === 'reset') {
       zerarVendas(150.0, caixaAtivo ? caixaAtivo.operador : 'Operador Principal')
@@ -126,6 +170,15 @@ export default function Settings() {
         <p className="text-xs text-muted-foreground mt-0.5">
           Personalize as informações do evento, parâmetros de impressão térmica, senhas e
           gerenciamento de backup local.
+        </p>
+        <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+          <HardDrive className="h-3.5 w-3.5" />
+          Persistência:{' '}
+          <span className="text-foreground">
+            {storageBackend === 'sqlite'
+              ? 'SQLite local (app nativo Windows/Linux)'
+              : 'localStorage (navegador)'}
+          </span>
         </p>
       </div>
 
@@ -158,7 +211,7 @@ export default function Settings() {
               </Label>
               <Input
                 type="text"
-                placeholder="Ex: Quermesse Beneficente da Paróquia"
+                placeholder="Ex: Unidade Centro / Evento Especial"
                 value={formData.subtitulo_evento}
                 onChange={(e) => setFormData({ ...formData, subtitulo_evento: e.target.value })}
                 className="h-10 text-sm"
@@ -171,7 +224,7 @@ export default function Settings() {
               </Label>
               <Input
                 type="text"
-                placeholder="Ex: ASSOCIAÇÃO BENEFICENTE - CNPJ 00.000.000/0001-00"
+                placeholder="Ex: BAR TEMPLÁRIOS"
                 value={formData.cabecalho_cupom}
                 onChange={(e) => setFormData({ ...formData, cabecalho_cupom: e.target.value })}
                 className="h-10 text-xs font-mono"
@@ -184,7 +237,7 @@ export default function Settings() {
               </Label>
               <Input
                 type="text"
-                placeholder="Ex: Válido apenas para o dia do evento. Não reembolsável."
+                placeholder="Ex: Obrigado pela preferência. Não reembolsável."
                 value={formData.rodape_cupom}
                 onChange={(e) => setFormData({ ...formData, rodape_cupom: e.target.value })}
                 className="h-10 text-xs"
@@ -276,28 +329,91 @@ export default function Settings() {
                   }
                   className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm font-bold"
                 >
-                  <option value="80mm">Bobina 80mm (Padrão)</option>
+                  <option value="80mm">Bobina 80mm (Padrão Elgin i9)</option>
                   <option value="58mm">Bobina 58mm (Estreita)</option>
                 </select>
               </div>
 
-              <div className="p-3 rounded-xl border border-border bg-primary/5 flex flex-col justify-center">
-                <div className="flex items-center gap-1.5 font-bold text-xs text-primary">
-                  <span>Modo de Emissão: Sempre Individual</span>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
-                  Cada unidade de cada item gera 1 ficha própria com QR code e código anti-fraude
-                  únicos.
-                </p>
+              <div>
+                <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
+                  Modo de impressão
+                </Label>
+                <select
+                  value={formData.modo_impressao || 'escpos'}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      modo_impressao: e.target.value as 'escpos' | 'navegador',
+                    })
+                  }
+                  className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm font-bold"
+                >
+                  <option value="escpos">ESC/POS Elgin i9 (recomendado)</option>
+                  <option value="navegador">Diálogo do Windows (fallback)</option>
+                </select>
               </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
+                Impressora Elgin i9
+              </Label>
+              <select
+                value={formData.impressora_nome || ''}
+                onChange={(e) => setFormData({ ...formData, impressora_nome: e.target.value })}
+                disabled={!isTauri() || loadingPrinters}
+                className="w-full h-11 px-3 rounded-md border border-input bg-background text-sm font-bold disabled:opacity-60"
+              >
+                <option value="">
+                  {loadingPrinters
+                    ? 'Detectando impressoras…'
+                    : 'Detectar automaticamente (preferir Elgin i9)'}
+                </option>
+                {printers.map((p) => (
+                  <option key={p.name} value={p.name}>
+                    {p.name}
+                    {p.is_default ? ' (padrão do Windows)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground mt-1.5 leading-snug">
+                Envia comandos RAW ESC/POS direto para a Elgin i9 (sem caixa de diálogo) e aciona a
+                guilhotina entre cada ficha. A impressora precisa aparecer no Windows com o driver
+                Elgin instalado.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl border border-border bg-primary/5">
+              <div className="flex items-center gap-1.5 font-bold text-xs text-primary">
+                <span>Modo de Emissão: Sempre Individual</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-tight">
+                Cada unidade de cada item gera 1 ficha própria (ex.: 10 unidades = 10 fichas).
+              </p>
             </div>
 
             <div className="space-y-3 pt-2">
               <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
                 <div>
-                  <div className="font-bold text-xs">Exibir Simulação de Impressão em Tela</div>
+                  <div className="font-bold text-xs">Imprimir automaticamente ao finalizar</div>
                   <div className="text-[11px] text-muted-foreground">
-                    Abre a pré-visualização das fichas geradas após cada venda.
+                    Envia as fichas direto para a impressora após a venda (sem painel na tela).
+                  </div>
+                </div>
+                <Switch
+                  checked={formData.auto_imprimir_ao_finalizar !== false}
+                  onCheckedChange={(val) =>
+                    setFormData({ ...formData, auto_imprimir_ao_finalizar: val })
+                  }
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
+                <div>
+                  <div className="font-bold text-xs">Mostrar painel antes de reimprimir</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Ao reimprimir pelo PDV/Relatórios, abre pré-visualização. Desligado = imprime
+                    direto.
                   </div>
                 </div>
                 <Switch
@@ -310,9 +426,10 @@ export default function Settings() {
 
               <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/20">
                 <div>
-                  <div className="font-bold text-xs">Indicação de Corte de Papel</div>
+                  <div className="font-bold text-xs">Corte automático (guilhotina Elgin i9)</div>
                   <div className="text-[11px] text-muted-foreground">
-                    Exibe linha tracejada com tesoura entre as fichas para guilhotina ou rasgo.
+                    No modo ESC/POS, aciona a guilhotina após cada ficha (comando GS V). Evita a
+                    “tripa” contínua de papel.
                   </div>
                 </div>
                 <Switch
@@ -324,17 +441,17 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* SEÇÃO 3: PERSONALIZAÇÃO COMPLETA DAS FICHAS COM PREVIEW AO VIVO */}
+        {/* SEÇÃO 3: MODELO FIXO DA FICHA + PREVIEW */}
         <div className="p-6 rounded-2xl border-2 border-primary/20 bg-card shadow-xs space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
             <div>
               <h3 className="font-bold text-base text-foreground flex items-center gap-2">
                 <Sliders className="w-5 h-5 text-primary" />
-                Personalização Visual das Fichas Térmicas
+                Modelo das Fichas Térmicas
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Escolha o que deve aparecer na ficha impressa e na pré-visualização. As alterações
-                refletem em tempo real no modelo ao lado.
+                Cada unidade vendida gera 1 ficha. Layout: nome do evento, data/hora e item em
+                destaque para troca no bar — impressão direta, sem QR Code.
               </p>
             </div>
             <div className="flex items-center gap-2 font-mono text-xs px-2.5 py-1 rounded bg-muted">
@@ -344,184 +461,60 @@ export default function Settings() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* TOGGLES DE ELEMENTOS DA FICHA */}
             <div className="lg:col-span-7 space-y-3">
-              {/* CABEÇALHO */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Cabeçalho (Nome e Subtítulo)</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Mostra o nome do evento e textos institucionais no topo.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_cabecalho !== false}
-                  onCheckedChange={(val) =>
-                    setFormData({ ...formData, ficha_mostrar_cabecalho: val })
-                  }
-                />
-              </div>
-
-              {/* LOGOMARCA */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir Logomarca no Cabeçalho</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    {formData.logomarca_base64
-                      ? 'Logomarca carregada e ativa.'
-                      : 'Carregue uma logo na seção acima para ativar este campo.'}
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_logo !== false}
-                  disabled={!formData.logomarca_base64}
-                  onCheckedChange={(val) => setFormData({ ...formData, ficha_mostrar_logo: val })}
-                />
-              </div>
-
-              {/* QR CODE */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir QR Code</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    QR Code 2D contendo o hash criptográfico para leitura rápida no balcão.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_qrcode !== false}
-                  onCheckedChange={(val) => setFormData({ ...formData, ficha_mostrar_qrcode: val })}
-                />
-              </div>
-
-              {/* HASH ANTI-FRAUDE */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir Hash Anti-Fraude Curto</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Código alfanumérico seguro (ex: 9A7B-3C2F) para digitação manual no balcão.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_hash !== false}
-                  onCheckedChange={(val) => setFormData({ ...formData, ficha_mostrar_hash: val })}
-                />
-              </div>
-
-              {/* PREÇO */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir Preço do Produto</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Mostra o valor pago na ficha emitida ao cliente.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_preco !== false}
-                  onCheckedChange={(val) => setFormData({ ...formData, ficha_mostrar_preco: val })}
-                />
-              </div>
-
-              {/* DATA / HORA */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir Data e Hora</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Timestamp exato do momento da compra.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_data_hora !== false}
-                  onCheckedChange={(val) =>
-                    setFormData({ ...formData, ficha_mostrar_data_hora: val })
-                  }
-                />
-              </div>
-
-              {/* OPERADOR */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir Operador e ID de Caixa</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Identificação de quem operou a venda e caixa emissor.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_operador !== false}
-                  onCheckedChange={(val) =>
-                    setFormData({ ...formData, ficha_mostrar_operador: val })
-                  }
-                />
-              </div>
-
-              {/* RODAPÉ */}
-              <div className="flex items-center justify-between p-3 rounded-xl border border-border bg-muted/10">
-                <div>
-                  <div className="font-bold text-xs">Exibir Mensagem de Rodapé</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Texto personalizado de aviso / validade no final do cupom.
-                  </div>
-                </div>
-                <Switch
-                  checked={formData.ficha_mostrar_rodape !== false}
-                  onCheckedChange={(val) => setFormData({ ...formData, ficha_mostrar_rodape: val })}
-                />
+              <div className="p-4 rounded-xl border border-border bg-muted/10 space-y-2 text-sm">
+                <p className="font-bold text-foreground">Conteúdo impresso</p>
+                <ul className="text-xs text-muted-foreground space-y-1.5 list-disc pl-4">
+                  <li>
+                    <strong className="text-foreground">Nome do evento</strong> no topo
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Data e hora</strong> da emissão
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Item</strong> em caixa preta, bem legível
+                    para o bar
+                  </li>
+                </ul>
+                <p className="text-[11px] text-muted-foreground pt-2 border-t border-border">
+                  Após a venda, as fichas vão direto para a impressora (10 unidades = 10 fichas).
+                </p>
               </div>
             </div>
 
-            {/* PREVIEW TÉRMICO AO VIVO */}
             <div className="lg:col-span-5 flex flex-col items-center">
               <div className="text-xs font-bold uppercase text-muted-foreground mb-2 flex items-center gap-1.5">
                 <Eye className="w-4 h-4 text-primary" />
-                Pré-visualização Térmica em Tempo Real
+                Pré-visualização
               </div>
               <div className="p-4 rounded-2xl bg-slate-200 dark:bg-slate-900 border border-border flex justify-center w-full overflow-hidden shadow-inner">
-                <ThermalFichaTicket ficha={sampleFicha} config={formData} showCutLine={false} />
+                <ThermalFichaTicket ficha={sampleFicha} config={formData} />
               </div>
               <p className="text-[11px] text-muted-foreground text-center mt-2">
-                Simulação fiel para bobina {formData.largura_bobina}.
+                Simulação para bobina {formData.largura_bobina}.
               </p>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* SEÇÃO 3: CHAVE PIX & SEGURANÇA */}
-          <div className="p-5 rounded-2xl border border-border bg-card shadow-xs space-y-4">
+          {/* SEÇÃO: FORMAS DE PAGAMENTO (INFORMATIVO) */}
+          <div className="p-5 rounded-2xl border border-border bg-card shadow-xs space-y-3">
             <h3 className="font-bold text-base text-foreground flex items-center gap-2 border-b border-border pb-2">
-              <QrCode className="w-5 h-5 text-teal-600" />
-              Chave PIX Estática para Recebimento
+              <CreditCard className="w-5 h-5 text-teal-600" />
+              Formas de pagamento
             </h3>
-
-            <div>
-              <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
-                Chave PIX (E-mail, Telefone, CNPJ ou Aleatória)
-              </Label>
-              <Input
-                type="text"
-                placeholder="Ex: tesouraria@comunidade.org.br"
-                value={formData.chave_pix_estatica || ''}
-                onChange={(e) => setFormData({ ...formData, chave_pix_estatica: e.target.value })}
-                className="h-11 font-mono text-sm"
-              />
-            </div>
-
-            <div>
-              <Label className="text-xs font-bold uppercase text-muted-foreground block mb-1">
-                Nome do Beneficiário / Razão Social
-              </Label>
-              <Input
-                type="text"
-                placeholder="Ex: Associação Beneficente dos Moradores"
-                value={formData.nome_beneficiario_pix || ''}
-                onChange={(e) =>
-                  setFormData({ ...formData, nome_beneficiario_pix: e.target.value })
-                }
-                className="h-10 text-sm"
-              />
-            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Na finalização da venda você apenas <strong className="text-foreground">marca</strong>{' '}
+              como o cliente pagou (dinheiro, PIX, débito, crédito ou cortesia). O cobro em si é
+              feito na maquininha ou em espécie — este sistema <strong className="text-foreground">não gera QR Code PIX</strong>.
+            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              As formas marcadas alimentam o fechamento de caixa e os relatórios do evento.
+            </p>
           </div>
 
-          {/* SEÇÃO 4: SENHA DE GERÊNCIA & ADMINISTRAÇÃO */}
+          {/* SEÇÃO: SENHA DE GERÊNCIA & ADMINISTRAÇÃO */}
           <div className="p-5 rounded-2xl border border-border bg-card shadow-xs space-y-4">
             <h3 className="font-bold text-base text-foreground flex items-center gap-2 border-b border-border pb-2">
               <Shield className="w-5 h-5 text-amber-500" />
@@ -605,7 +598,7 @@ export default function Settings() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => fileInputRef.current?.click()}
+                onClick={() => void handleImportClick()}
                 className="w-full font-bold gap-2"
               >
                 <Upload className="w-4 h-4" />

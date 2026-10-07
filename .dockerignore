@@ -1,0 +1,17 @@
+# Acelera o contexto enviado ao Docker no build Linux
+node_modules
+pnpm-store
+.pnpm-store
+.pnpm
+dist
+dist-ssr
+dev-dist
+dist-installers
+src-tauri/target
+.git
+.cursor
+*.log
+*.bak-*
+.env*
+screenshot.png
+agent-transcripts

@@ -8,7 +8,6 @@ import Index from './pages/Index'
 import Dashboard from './pages/Dashboard'
 import CashControl from './pages/CashControl'
 import ProductsManager from './pages/ProductsManager'
-import TicketValidator from './pages/TicketValidator'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
@@ -25,7 +24,6 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/caixa" element={<CashControl />} />
-            <Route path="/validar" element={<TicketValidator />} />
             <Route path="/produtos" element={<ProductsManager />} />
             <Route path="/relatorios" element={<Reports />} />
             <Route path="/configuracoes" element={<Settings />} />
