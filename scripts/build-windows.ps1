@@ -8,7 +8,7 @@ $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
 Write-Host "==> [Windows] pnpm tauri build --bundles nsis,msi" -ForegroundColor Cyan
-pnpm exec tauri build --bundles nsis,msi
+pnpm exec tauri build --bundles "nsis,msi"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $Out = Join-Path $Root "dist-installers\windows"

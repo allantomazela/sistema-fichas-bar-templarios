@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { FormaPagamento } from '@/types/pos'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, parseValorMonetario } from '@/lib/utils'
 import {
   Banknote,
   Smartphone,
@@ -86,7 +86,7 @@ export function PaymentModal() {
   const inputRecebidoRef = useRef<HTMLInputElement>(null)
 
   const totalAPagar = Math.max(0, cartTotal)
-  const valorRecebido = parseFloat(valorRecebidoStr.replace(',', '.')) || 0
+  const valorRecebido = parseValorMonetario(valorRecebidoStr)
   const troco = formaPagamento === 'dinheiro' ? Math.max(0, valorRecebido - totalAPagar) : 0
   const faltaPagar = formaPagamento === 'dinheiro' ? Math.max(0, totalAPagar - valorRecebido) : 0
   const podeConfirmar = !(formaPagamento === 'dinheiro' && valorRecebido < totalAPagar)

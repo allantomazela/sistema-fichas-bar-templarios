@@ -1,6 +1,7 @@
 import {
   Categoria,
   Produto,
+  ProdutoComImagem,
   Configuracoes,
   Caixa,
   MovimentacaoCaixa,
@@ -9,81 +10,24 @@ import {
   DatabaseBackup,
   CartItem,
   FormaPagamento,
+  LoteFichas,
 } from '@/types/pos'
-import { INITIAL_CATEGORIAS, INITIAL_PRODUTOS, INITIAL_CONFIG, INITIAL_CAIXA } from './mockData'
+import { INITIAL_CATEGORIAS, INITIAL_PRODUTOS, INITIAL_CONFIG } from './mockData'
 import { storageGetItem, storageSetItem } from './storage'
+import {
+  CATALOG_ARRAY_KEYS,
+  EVENT_ARRAY_KEYS,
+  SEQUENCE_KEYS,
+  STORAGE_KEYS,
+  safeGet,
+  safeGetArray,
+  safeSet,
+} from './kvStore'
+import { StockService } from './stockService'
+import { ProductImageService } from './productImages'
+import { computeConsumoEstoque } from '@/lib/stock'
 
-const STORAGE_KEYS = {
-  CONFIG: 'templarios_pdv_config',
-  CATEGORIAS: 'templarios_pdv_categorias',
-  PRODUTOS: 'templarios_pdv_produtos',
-  CAIXAS: 'templarios_pdv_caixas',
-  MOVIMENTACOES: 'templarios_pdv_movimentacoes',
-  VENDAS: 'templarios_pdv_vendas',
-  FICHAS: 'templarios_pdv_fichas',
-  CAIXA_ATIVO_ID: 'templarios_pdv_caixa_ativo_id',
-  SEQUENCIAL_FICHA: 'templarios_pdv_seq_ficha',
-  SEQUENCIAL_VENDA: 'templarios_pdv_seq_venda',
-}
-
-/** Chaves de histórico: JSON inválido NÃO pode virar [] e sobrescrever o disco. */
-const CRITICAL_ARRAY_KEYS = new Set([
-  STORAGE_KEYS.VENDAS,
-  STORAGE_KEYS.FICHAS,
-  STORAGE_KEYS.PRODUTOS,
-  STORAGE_KEYS.CATEGORIAS,
-  STORAGE_KEYS.CAIXAS,
-  STORAGE_KEYS.MOVIMENTACOES,
-])
-
-export class StorageCorruptionError extends Error {
-  constructor(public readonly key: string) {
-    super(
-      `Dados locais corrompidos (${key}). Não continue vendendo — restaure um backup em Configurações.`,
-    )
-    this.name = 'StorageCorruptionError'
-  }
-}
-
-// Persistência: SQLite (app nativo) ou localStorage (browser)
-function safeGet<T>(key: string, fallback: T): T {
-  try {
-    const item = storageGetItem(key)
-    if (!item) return fallback
-    return JSON.parse(item) as T
-  } catch (err) {
-    console.error(`Erro ao carregar chave ${key} do armazenamento local`, err)
-    if (CRITICAL_ARRAY_KEYS.has(key)) {
-      throw new StorageCorruptionError(key)
-    }
-    return fallback
-  }
-}
-
-function safeGetArray<T>(key: string): T[] {
-  const item = storageGetItem(key)
-  if (!item) return []
-  try {
-    const parsed = JSON.parse(item) as unknown
-    if (!Array.isArray(parsed)) {
-      throw new StorageCorruptionError(key)
-    }
-    return parsed as T[]
-  } catch (err) {
-    if (err instanceof StorageCorruptionError) throw err
-    console.error(`Erro ao carregar array ${key}`, err)
-    throw new StorageCorruptionError(key)
-  }
-}
-
-function safeSet<T>(key: string, value: T): void {
-  try {
-    storageSetItem(key, JSON.stringify(value))
-  } catch (err) {
-    console.error(`Erro ao gravar chave ${key} no armazenamento local`, err)
-    throw err
-  }
-}
+export { StorageCorruptionError } from './kvStore'
 
 // Simple hash generator for ticket verification
 export function generateSecurityHash(
@@ -267,46 +211,113 @@ export class LocalDatabaseService {
     safeSet(STORAGE_KEYS.PRODUTOS, produtos)
   }
 
-  static addProduto(produto: Omit<Produto, 'id'>): Produto {
+  static addProduto(entrada: Omit<ProdutoComImagem, 'id'>): Produto {
+    const { imagem_base64, ...produto } = entrada
     const produtos = this.getProdutos()
+    const saldoInicial = produto.estoque_atual ?? 0
     const newProd: Produto = {
       ...produto,
       id: `prod-${Date.now()}`,
+      ...(produto.controla_estoque ? { estoque_atual: 0 } : {}),
     }
     produtos.push(newProd)
+    ProductImageService.definir(newProd.id, imagem_base64)
+
+    if (produto.controla_estoque && saldoInicial > 0) {
+      const { produtos: comSaldo, movimentos } = StockService.definirSaldo(
+        produtos,
+        newProd.id,
+        saldoInicial,
+        { tipo: 'entrada', motivo: 'Estoque inicial (cadastro do produto)' },
+      )
+      this.saveProdutos(comSaldo)
+      StockService.registrar(movimentos)
+      return comSaldo.find((p) => p.id === newProd.id) as Produto
+    }
+
     this.saveProdutos(produtos)
     return newProd
   }
 
-  static updateProduto(id: string, updates: Partial<Produto>): void {
-    const produtos = this.getProdutos().map((p) => (p.id === id ? { ...p, ...updates } : p))
+  /** Atualiza o cadastro. Mudança de saldo pelo formulário vira um "ajuste" no histórico. */
+  static updateProduto(id: string, alteracoes: Partial<ProdutoComImagem>): void {
+    const { imagem_base64, ...updates } = alteracoes
+    if ('imagem_base64' in alteracoes) ProductImageService.definir(id, imagem_base64)
+    const { estoque_atual: novoSaldo, ...resto } = updates
+    let produtos = this.getProdutos().map((p) => (p.id === id ? { ...p, ...resto } : p))
+    const atual = produtos.find((p) => p.id === id)
+
+    if (atual?.controla_estoque && typeof novoSaldo === 'number') {
+      const result = StockService.definirSaldo(produtos, id, novoSaldo, {
+        tipo: 'ajuste',
+        motivo: 'Saldo alterado no cadastro do produto',
+      })
+      produtos = result.produtos
+      StockService.registrar(result.movimentos)
+    } else if ('estoque_atual' in updates) {
+      produtos = produtos.map((p) => (p.id === id ? { ...p, estoque_atual: novoSaldo } : p))
+    }
+
     this.saveProdutos(produtos)
   }
 
+  /** Remove do catálogo. Recusa se o produto compõe algum combo (o combo quebraria). */
   static deleteProduto(id: string): void {
-    const produtos = this.getProdutos().filter((p) => p.id !== id)
-    this.saveProdutos(produtos)
+    const todos = this.getProdutos()
+    const combosQueUsam = todos.filter(
+      (p) => p.id !== id && p.is_combo && p.itens_combo?.some((it) => it.produto_id === id),
+    )
+    if (combosQueUsam.length > 0) {
+      const nomes = combosQueUsam.map((c) => `"${c.nome}"`).join(', ')
+      throw new Error(`Este produto faz parte do combo ${nomes}. Retire-o do combo antes de excluir.`)
+    }
+    this.saveProdutos(todos.filter((p) => p.id !== id))
+    ProductImageService.definir(id, undefined)
   }
 
-  // Reposição rápida de estoque (+quantidade)
-  static reporEstoque(id: string, quantidadeAdicional: number): Produto | null {
+  /**
+   * Movimentação manual de estoque.
+   * entrada: soma · perda: subtrai · ajuste: define o saldo contado.
+   */
+  static movimentarEstoque(params: {
+    produtoId: string
+    tipo: 'entrada' | 'perda' | 'ajuste'
+    quantidade: number
+    motivo?: string
+    operador?: string
+  }): Produto {
+    const quantidade = Math.floor(params.quantidade)
+    if (!Number.isFinite(quantidade) || quantidade < 0) {
+      throw new Error('Informe uma quantidade válida (número inteiro, zero ou maior).')
+    }
+    if (params.tipo !== 'ajuste' && quantidade === 0) {
+      throw new Error('A quantidade precisa ser maior que zero.')
+    }
+
     const produtos = this.getProdutos()
-    let updated: Produto | null = null
-    const novosProdutos = produtos.map((p) => {
-      if (p.id === id) {
-        const estoqueAtual = p.estoque_atual ?? 0
-        const novoEstoque = Math.max(0, estoqueAtual + quantidadeAdicional)
-        updated = {
-          ...p,
-          controla_estoque: true,
-          estoque_atual: novoEstoque,
-        }
-        return updated
-      }
-      return p
-    })
-    this.saveProdutos(novosProdutos)
-    return updated
+    const produto = produtos.find((p) => p.id === params.produtoId)
+    if (!produto) throw new Error('Produto não encontrado no catálogo.')
+    if (produto.is_combo) {
+      throw new Error('Combos não têm estoque próprio: movimente os produtos que compõem o combo.')
+    }
+
+    const contexto = { tipo: params.tipo, motivo: params.motivo?.trim() || undefined, operador: params.operador }
+    const saldoAtual = produto.estoque_atual ?? 0
+    const novoSaldo =
+      params.tipo === 'ajuste'
+        ? quantidade
+        : params.tipo === 'entrada'
+          ? saldoAtual + quantidade
+          : saldoAtual - quantidade
+
+    if (novoSaldo < 0) {
+      throw new Error(`Perda maior que o saldo atual (${saldoAtual} un) de "${produto.nome}".`)
+    }
+
+    const result = StockService.definirSaldo(produtos, produto.id, novoSaldo, contexto)
+    this.saveProdutos(result.produtos)
+    StockService.registrar(result.movimentos)
+    return result.produtos.find((p) => p.id === produto.id) as Produto
   }
 
   // CAIXAS / TURNOS
@@ -557,21 +568,7 @@ export class LocalDatabaseService {
     })
 
     // Baixa automática de estoque — revalida no commit (estoque fresco do disco)
-    const consumoEstoque = new Map<string, number>()
-    params.itens.forEach((cartItem) => {
-      const prod = cartItem.produto
-      if (prod.is_combo && prod.itens_combo && prod.itens_combo.length > 0) {
-        prod.itens_combo.forEach((sub) => {
-          const totalQtdSub = cartItem.quantidade * sub.quantidade
-          consumoEstoque.set(
-            sub.produto_id,
-            (consumoEstoque.get(sub.produto_id) || 0) + totalQtdSub,
-          )
-        })
-      } else {
-        consumoEstoque.set(prod.id, (consumoEstoque.get(prod.id) || 0) + cartItem.quantidade)
-      }
-    })
+    const consumoEstoque = computeConsumoEstoque(vendaItens)
 
     for (const [produtoId, qtdNecessaria] of consumoEstoque) {
       const p = prodMap.get(produtoId)
@@ -587,17 +584,17 @@ export class LocalDatabaseService {
       }
     }
 
-    const updatedProdutos = produtos.map((p) => {
-      const qtdConsumida = consumoEstoque.get(p.id)
-      if (qtdConsumida && p.controla_estoque && p.estoque_atual !== undefined) {
-        return {
-          ...p,
-          estoque_atual: Math.max(0, p.estoque_atual - qtdConsumida),
-        }
-      }
-      return p
+    const baixas = new Map<string, number>()
+    consumoEstoque.forEach((qtd, produtoId) => baixas.set(produtoId, -qtd))
+    const baixa = StockService.aplicarVariacoes(produtos, baixas, {
+      tipo: 'venda',
+      motivo: `Venda #${seqVenda}`,
+      operador: params.operador,
+      venda_id: vendaId,
+      sequencial_venda: seqVenda,
     })
-    this.saveProdutos(updatedProdutos)
+    this.saveProdutos(baixa.produtos)
+    StockService.registrar(baixa.movimentos)
 
     // Salva tudo
     const vendas = this.getVendas()
@@ -619,6 +616,11 @@ export class LocalDatabaseService {
     const vendas = this.getVendas()
     const venda = vendas.find((v) => v.id === vendaId)
     if (!venda || venda.status === 'cancelada') return false
+    if (venda.lote_id) {
+      throw new Error(
+        'Esta venda é a prestação de contas de um lote de fichas antecipadas e não pode ser cancelada aqui.',
+      )
+    }
 
     const updatedVendas = vendas.map((v) => {
       if (v.id === vendaId) {
@@ -641,31 +643,19 @@ export class LocalDatabaseService {
     safeSet(STORAGE_KEYS.FICHAS, allFichas)
 
     // Repõe estoque consumido (mesma regra da baixa na finalização)
-    const produtos = this.getProdutos()
-    const reposicao = new Map<string, number>()
-
-    venda.itens.forEach((item) => {
-      if (item.is_combo && item.itens_combo && item.itens_combo.length > 0) {
-        item.itens_combo.forEach((sub) => {
-          const qtd = item.quantidade * sub.quantidade
-          reposicao.set(sub.produto_id, (reposicao.get(sub.produto_id) || 0) + qtd)
-        })
-      } else {
-        reposicao.set(item.produto_id, (reposicao.get(item.produto_id) || 0) + item.quantidade)
-      }
-    })
-
-    const updatedProdutos = produtos.map((p) => {
-      const qtd = reposicao.get(p.id)
-      if (qtd && p.controla_estoque) {
-        return {
-          ...p,
-          estoque_atual: Math.max(0, (p.estoque_atual ?? 0) + qtd),
-        }
-      }
-      return p
-    })
-    this.saveProdutos(updatedProdutos)
+    const estorno = StockService.aplicarVariacoes(
+      this.getProdutos(),
+      computeConsumoEstoque(venda.itens),
+      {
+        tipo: 'estorno',
+        motivo: `Cancelamento da venda #${venda.sequencial_venda}${motivo ? ` — ${motivo}` : ''}`,
+        operador: venda.operador,
+        venda_id: venda.id,
+        sequencial_venda: venda.sequencial_venda,
+      },
+    )
+    this.saveProdutos(estorno.produtos)
+    StockService.registrar(estorno.movimentos)
 
     return true
   }
@@ -744,34 +734,54 @@ export class LocalDatabaseService {
       data_backup: new Date().toISOString(),
       configuracoes: this.getConfig(),
       categorias: this.getCategorias(),
-      produtos: this.getProdutos(),
+      produtos: ProductImageService.juntar(this.getProdutos()),
       caixas: this.getCaixas(),
       movimentacoes_caixa: this.getMovimentacoes(),
       vendas: this.getVendas(),
       fichas: this.getFichas(),
+      movimentacoes_estoque: StockService.getMovimentacoes(),
+      lotes_fichas: safeGetArray<LoteFichas>(STORAGE_KEYS.LOTES_FICHAS),
     }
+  }
+
+  /** Estrutura mínima para restaurar sem deixar o banco pela metade. */
+  static isBackupValido(dados: unknown): dados is DatabaseBackup {
+    if (!dados || typeof dados !== 'object') return false
+    const b = dados as Partial<DatabaseBackup>
+    const listaOpcional = (v: unknown) => v === undefined || Array.isArray(v)
+    return (
+      !!b.configuracoes &&
+      typeof b.configuracoes === 'object' &&
+      Array.isArray(b.categorias) &&
+      Array.isArray(b.produtos) &&
+      [b.caixas, b.movimentacoes_caixa, b.vendas, b.fichas, b.movimentacoes_estoque, b.lotes_fichas].every(
+        listaOpcional,
+      )
+    )
   }
 
   static importBackup(backup: DatabaseBackup): boolean {
     try {
-      if (!backup.configuracoes || !backup.categorias || !backup.produtos) {
+      if (!this.isBackupValido(backup)) {
         throw new Error('Arquivo de backup inválido.')
       }
       safeSet(STORAGE_KEYS.CONFIG, backup.configuracoes)
       safeSet(STORAGE_KEYS.CATEGORIAS, backup.categorias)
-      safeSet(STORAGE_KEYS.PRODUTOS, backup.produtos)
-      safeSet(STORAGE_KEYS.CAIXAS, backup.caixas || [INITIAL_CAIXA])
+      const { produtos, imagens } = ProductImageService.separar(backup.produtos)
+      safeSet(STORAGE_KEYS.PRODUTOS, produtos)
+      ProductImageService.substituirTudo(imagens)
+      safeSet(STORAGE_KEYS.CAIXAS, backup.caixas || [])
+      safeSet(STORAGE_KEYS.CAIXA_ATIVO_ID, null)
       safeSet(STORAGE_KEYS.MOVIMENTACOES, backup.movimentacoes_caixa || [])
       safeSet(STORAGE_KEYS.VENDAS, backup.vendas || [])
       safeSet(STORAGE_KEYS.FICHAS, backup.fichas || [])
-
-      const maxFichaSeq = (backup.fichas || []).reduce((max, f) => Math.max(max, f.sequencial), 0)
-      const maxVendaSeq = (backup.vendas || []).reduce(
-        (max, v) => Math.max(max, v.sequencial_venda),
-        0,
+      StockService.substituirTudo(
+        Array.isArray(backup.movimentacoes_estoque) ? backup.movimentacoes_estoque : [],
       )
-      safeSet(STORAGE_KEYS.SEQUENCIAL_FICHA, maxFichaSeq + 1)
-      safeSet(STORAGE_KEYS.SEQUENCIAL_VENDA, maxVendaSeq + 1)
+      safeSet(STORAGE_KEYS.LOTES_FICHAS, Array.isArray(backup.lotes_fichas) ? backup.lotes_fichas : [])
+
+      safeSet(STORAGE_KEYS.SEQUENCIAL_FICHA, maiorNumero(backup.fichas, (f) => f.sequencial) + 1)
+      safeSet(STORAGE_KEYS.SEQUENCIAL_VENDA, maiorNumero(backup.vendas, (v) => v.sequencial_venda) + 1)
 
       return true
     } catch (e) {
@@ -780,8 +790,27 @@ export class LocalDatabaseService {
     }
   }
 
+  /**
+   * Apaga todos os dados operacionais e o catálogo (fica vazio, sem produtos de exemplo).
+   * Mantém só as configurações (evento, impressora, senha).
+   */
+  static zerarBancoCompleto(): void {
+    limparDadosDoEvento()
+    for (const key of CATALOG_ARRAY_KEYS) safeSet(key, [])
+    safeSet(STORAGE_KEYS.CAIXA_ATIVO_ID, null)
+  }
+
   // ZERAR VENDAS PARA NOVO EVENTO
   static resetVendasParaNovoEvento(operador: string, fundoTroco: number): void {
+    const lotesAbertos = safeGetArray<LoteFichas>(STORAGE_KEYS.LOTES_FICHAS).filter(
+      (l) => l.status === 'aberto',
+    )
+    if (lotesAbertos.length > 0) {
+      throw new Error(
+        `Há ${lotesAbertos.length} lote(s) de fichas antecipadas em aberto. Preste contas ou cancele antes de iniciar um novo evento.`,
+      )
+    }
+
     const novoCaixa: Caixa = {
       id: `cx-${Date.now()}`,
       operador: operador || 'Operador',
@@ -791,12 +820,24 @@ export class LocalDatabaseService {
       observacoes: 'Abertura para novo evento limpo',
     }
 
+    // Saldos dos produtos são mantidos; só o histórico do evento anterior é limpo
+    limparDadosDoEvento()
     safeSet(STORAGE_KEYS.CAIXAS, [novoCaixa])
     safeSet(STORAGE_KEYS.CAIXA_ATIVO_ID, novoCaixa.id)
-    safeSet(STORAGE_KEYS.MOVIMENTACOES, [])
-    safeSet(STORAGE_KEYS.VENDAS, [])
-    safeSet(STORAGE_KEYS.FICHAS, [])
-    safeSet(STORAGE_KEYS.SEQUENCIAL_FICHA, 1)
-    safeSet(STORAGE_KEYS.SEQUENCIAL_VENDA, 1)
   }
+}
+
+/** Maior número válido da lista (0 se vazia) — ignora registros sem número. */
+function maiorNumero<T>(itens: T[] | undefined, numero: (item: T) => unknown): number {
+  let maior = 0
+  for (const item of itens ?? []) {
+    const n = numero(item)
+    if (typeof n === 'number' && Number.isFinite(n) && n > maior) maior = n
+  }
+  return maior
+}
+
+function limparDadosDoEvento(): void {
+  for (const key of EVENT_ARRAY_KEYS) safeSet(key, [])
+  for (const key of SEQUENCE_KEYS) safeSet(key, 1)
 }

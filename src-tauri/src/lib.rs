@@ -81,6 +81,17 @@ pub fn run() {
             ",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "store lists one row per item (see src/services/rowStore.ts)",
+            sql: "CREATE TABLE IF NOT EXISTS kv_rows (
+                key TEXT NOT NULL,
+                pos INTEGER NOT NULL,
+                json TEXT NOT NULL,
+                PRIMARY KEY (key, pos)
+              );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -1,6 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { Configuracoes, Ficha } from '@/types/pos'
 import { formatDate, formatTime } from '@/lib/utils'
+import { formatNumeroFicha, rotuloFicha } from '@/lib/fichaLote'
 
 export type PrinterInfo = {
   name: string
@@ -239,7 +240,7 @@ function buildOneTicket(builder: EscPosBuilder, ficha: Ficha, config: Configurac
   const titulo = getFichaTitulo(config).toUpperCase()
   const local = getFichaLocal(config)
   const org = getFichaOrganizacao(config)
-  const seq = String(ficha.sequencial).padStart(4, '0')
+  const seq = formatNumeroFicha(ficha)
   const when = `${formatDate(ficha.data_emissao)} ${formatTime(ficha.data_emissao)}`
   const produto = ficha.produto_nome.toUpperCase()
 
@@ -259,7 +260,7 @@ function buildOneTicket(builder: EscPosBuilder, ficha: Ficha, config: Configurac
   }
 
   builder.line(sep)
-  builder.bold(true).line('VALE CONSUMO')
+  builder.bold(true).line(rotuloFicha(ficha).toUpperCase())
   builder.bold(false)
 
   builder.bold(true).size(0x11)

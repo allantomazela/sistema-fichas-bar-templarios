@@ -1,6 +1,9 @@
 import React from 'react'
+import { isTauri } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 import { Ficha, Configuracoes, Caixa } from '@/types/pos'
 import { formatCurrency, formatDateTime, formatDate, formatTime } from '@/lib/utils'
+import { formatNumeroFicha, rotuloFicha } from '@/lib/fichaLote'
 
 interface SingleFichaProps {
   ficha: Ficha
@@ -79,7 +82,7 @@ export const ThermalFichaTicket: React.FC<SingleFichaProps> = ({ ficha, config }
   const titulo = getFichaTitulo(config).toUpperCase()
   const local = getFichaLocal(config)
   const organizacao = getFichaOrganizacao(config)
-  const seq = String(ficha.sequencial).padStart(4, '0')
+  const seq = formatNumeroFicha(ficha)
 
   return (
     <div
@@ -134,7 +137,7 @@ export const ThermalFichaTicket: React.FC<SingleFichaProps> = ({ ficha, config }
             marginBottom: 3,
           }}
         >
-          Vale consumo
+          {rotuloFicha(ficha)}
         </div>
         <div
           style={{
@@ -177,14 +180,13 @@ export const ThermalFichaTicket: React.FC<SingleFichaProps> = ({ ficha, config }
 }
 
 function buildFichaTicketHtml(ficha: Ficha, config: Configuracoes, isLast: boolean): string {
-  const m = getTicketMetrics(config.largura_bobina)
   const titulo = escapeHtml(getFichaTitulo(config).toUpperCase())
   const local = escapeHtml(getFichaLocal(config))
   const organizacao = escapeHtml(getFichaOrganizacao(config))
   const itemName = escapeHtml(ficha.produto_nome.toUpperCase())
   const dateStr = escapeHtml(formatDate(ficha.data_emissao))
   const timeStr = escapeHtml(formatTime(ficha.data_emissao))
-  const seq = String(ficha.sequencial).padStart(4, '0')
+  const seq = formatNumeroFicha(ficha)
   const cutMark =
     !isLast && config.corte_automatico !== false
       ? `<div class="cut-mark" aria-hidden="true">- - - - - corte - - - - -</div>`
@@ -197,7 +199,7 @@ function buildFichaTicketHtml(ficha: Ficha, config: Configuracoes, isLast: boole
         <div class="t-ornament" aria-hidden="true"><span></span><i></i><span></span></div>
         <div class="t-meta">${dateStr}<span>·</span>${timeStr}<br/>${local}</div>
         <div class="t-item-box">
-          <div class="t-label">Vale consumo</div>
+          <div class="t-label">${escapeHtml(rotuloFicha(ficha))}</div>
           <div class="t-item">${itemName}</div>
         </div>
         <div class="t-org">${organizacao}</div>
@@ -216,7 +218,6 @@ function buildFichaTicketHtml(ficha: Ficha, config: Configuracoes, isLast: boole
 export async function printFichasDireto(fichas: Ficha[], config: Configuracoes): Promise<void> {
   if (!fichas.length) return
 
-  const { isTauri } = await import('@tauri-apps/api/core')
   const useEscPos = isTauri() && (config.modo_impressao || 'escpos') !== 'navegador'
 
   if (useEscPos) {
@@ -227,12 +228,7 @@ export async function printFichasDireto(fichas: Ficha[], config: Configuracoes):
     } catch (err) {
       console.error('Falha ESC/POS Elgin i9, tentando fallback do navegador:', err)
       const message = err instanceof Error ? err.message : String(err)
-      try {
-        const { toast } = await import('sonner')
-        toast.warning(`Elgin i9: ${message}. Tentando impressão alternativa…`)
-      } catch {
-        /* ignore */
-      }
+      toast.warning(`Elgin i9: ${message}. Tentando impressão alternativa…`)
     }
   }
 

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import { usePos } from '@/context/PosContext'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
+import { formatNumeroLote } from '@/lib/fichaLote'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -8,11 +9,9 @@ import {
   FileSpreadsheet,
   Download,
   Printer,
-  Calendar,
   DollarSign,
   TrendingUp,
   Receipt,
-  XCircle,
   Ban,
   Layers,
   BarChart3,
@@ -21,7 +20,7 @@ import { AdminPasswordModal } from '@/components/modals/AdminPasswordModal'
 import { toast } from 'sonner'
 
 export default function Reports() {
-  const { vendas, fichas, caixas, cancelarVenda, setPreviewFichas } = usePos()
+  const { vendas, fichas, cancelarVenda, setPreviewFichas } = usePos()
   const [filtroStatus, setFiltroStatus] = useState<'todas' | 'concluida' | 'cancelada'>('todas')
   const [filtroForma, setFiltroForma] = useState<string>('todas')
   const [searchQuery, setSearchQuery] = useState('')
@@ -380,7 +379,15 @@ export default function Reports() {
                       )}
                     </td>
                     <td className="p-3 text-right space-x-1">
-                      {v.status === 'concluida' && (
+                      {v.lote_numero ? (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] uppercase font-bold"
+                          title="Prestação de contas de fichas antecipadas — gerencie em Fichas Antecipadas (F7)"
+                        >
+                          Lote {formatNumeroLote(v.lote_numero)}
+                        </Badge>
+                      ) : v.status === 'concluida' && (
                         <>
                           <Button
                             variant="ghost"

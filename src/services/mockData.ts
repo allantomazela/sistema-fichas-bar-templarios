@@ -1,4 +1,4 @@
-import { Categoria, Produto, Configuracoes, Caixa } from '@/types/pos'
+import { Categoria, Produto, Configuracoes } from '@/types/pos'
 
 export const INITIAL_CATEGORIAS: Categoria[] = [
   {
@@ -290,13 +290,4 @@ export const INITIAL_CONFIG: Configuracoes = {
   ficha_mostrar_operador: false,
   ficha_mostrar_rodape: true,
   ficha_mostrar_imagem_produto: false,
-}
-
-export const INITIAL_CAIXA: Caixa = {
-  id: 'cx-default-01',
-  operador: 'Operador Principal',
-  abertura: new Date().toISOString(),
-  saldo_inicial: 100.0,
-  status: 'fechado',
-  observacoes: 'Caixa de exemplo (fechado) — abra um turno real antes de vender',
 }

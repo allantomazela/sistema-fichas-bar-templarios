@@ -32,11 +32,18 @@ export interface Produto {
   descricao?: string
   is_combo?: boolean
   itens_combo?: ComboItem[] // Para desmembrar combos em fichas individuais
-  imagem_base64?: string // Foto só na tela de venda / cadastro (nunca na ficha)
   imprimir_imagem_ficha?: boolean // Legado — sempre false; ficha imprime apenas o nome
   controla_estoque?: boolean // Se true, o produto tem limite e baixa de estoque
   estoque_atual?: number // Quantidade atual em estoque (opcional)
   estoque_minimo?: number // Alerta de estoque baixo (opcional, ex: 10)
+}
+
+/**
+ * Produto com a foto embutida: formato do formulário de cadastro e do arquivo de backup.
+ * No banco a foto fica numa lista própria (ver ProductImageService).
+ */
+export interface ProdutoComImagem extends Produto {
+  imagem_base64?: string // Foto só na tela de venda / cadastro (nunca na ficha)
 }
 
 export interface Caixa {
@@ -64,6 +71,31 @@ export interface MovimentacaoCaixa {
   motivo: string
   operador: string
   data_hora: string // ISO string
+}
+
+/**
+ * entrada = compra/recebimento · ajuste = contagem física (define o saldo)
+ * perda = quebra/vencido · venda = baixa automática · estorno = venda cancelada
+ */
+export type TipoMovimentacaoEstoque = 'entrada' | 'ajuste' | 'perda' | 'venda' | 'estorno' | 'lote'
+
+export interface MovimentacaoEstoque {
+  id: string
+  produto_id: string
+  produto_nome: string
+  tipo: TipoMovimentacaoEstoque
+  /** Variação aplicada ao saldo (positiva = entrou, negativa = saiu). */
+  quantidade: number
+  estoque_anterior: number
+  estoque_posterior: number
+  motivo?: string
+  venda_id?: string
+  sequencial_venda?: number
+  operador?: string
+  data_hora: string // ISO string
+  /** Preenchidos quando um lançamento manual é corrigido depois. */
+  editado_em?: string
+  editado_por?: string
 }
 
 export interface VendaItem {
@@ -94,6 +126,9 @@ export interface Venda {
   status: StatusVenda
   motivo_cancelamento?: string
   itens: VendaItem[]
+  /** Venda gerada na prestação de contas de um lote de fichas antecipadas. */
+  lote_id?: string
+  lote_numero?: number
 }
 
 export interface Ficha {
@@ -111,6 +146,8 @@ export interface Ficha {
   operador: string
   caixa_id: string
   status: StatusFicha
+  /** Preenchido nas fichas antecipadas: numeração própria do lote (L03-0001). */
+  lote_numero?: number
   /** @deprecated Não usado — fichas não carregam foto do produto */
   produto_imagem_base64?: string
   /** @deprecated Sempre false — ficha imprime só o nome */
@@ -168,9 +205,48 @@ export interface DatabaseBackup {
   data_backup: string
   configuracoes: Configuracoes
   categorias: Categoria[]
-  produtos: Produto[]
+  produtos: ProdutoComImagem[]
   caixas: Caixa[]
   movimentacoes_caixa: MovimentacaoCaixa[]
   vendas: Venda[]
   fichas: Ficha[]
+  movimentacoes_estoque?: MovimentacaoEstoque[]
+  lotes_fichas?: LoteFichas[]
+}
+
+export type StatusLoteFichas = 'aberto' | 'prestado' | 'cancelado'
+
+export interface LoteFichasItem {
+  produto_id: string
+  produto_nome: string
+  preco_unitario: number
+  quantidade: number
+  /** Informado na prestação de contas. */
+  devolvidas?: number
+}
+
+/**
+ * Fichas impressas antes da venda (contingência, ambulante, barraca).
+ * Não entram no caixa ao imprimir: o estoque fica reservado e a venda só
+ * é registrada na prestação de contas (fichas que não voltaram = vendidas).
+ */
+export interface LoteFichas {
+  id: string
+  numero: number
+  responsavel: string
+  motivo?: string
+  status: StatusLoteFichas
+  criado_em: string
+  criado_por: string
+  itens: LoteFichasItem[]
+  /** Fichas impressas (guardadas para reimpressão; não entram na lista de fichas de venda). */
+  fichas: Ficha[]
+  prestado_em?: string
+  prestado_por?: string
+  forma_pagamento?: FormaPagamento
+  total_recebido?: number
+  venda_id?: string
+  sequencial_venda?: number
+  cancelado_em?: string
+  motivo_cancelamento?: string
 }
